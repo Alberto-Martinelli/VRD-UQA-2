@@ -99,7 +99,7 @@ Develop a website with all model for easy comparison
 This project is licensed under the **CC BY-NC 4.0**. See [LICENSE](LICENSE) for more information.
 
 ## Contact
-If you are interested in this work or have questions about the code, the paper or the dataset, please contact us by email at vqacorruption@gmail.com.
+If you are interested in this work or have questions about the code, the paper or the dataset, please contact us by email at davide.napolitano@polito.it
 
 ## Citation
 
