@@ -1,0 +1,164 @@
+{
+    "cloud_models": {
+        "gemini": {
+            "type": "gemini",
+            "name": "gemini",
+            "project_id": "vqacorruption",
+            "region": "us-central1",
+            "model_name": "gemini-2.5-flash",
+            "max_tokens": 1024,
+            "batch_size": 1,
+            "api_key": ""
+        },
+        "claude": {
+            "type": "claude",
+            "name": "claude",
+            "project_id": "vqacorruption",
+            "region": "europe-west1",
+            "model_name": "claude-3-5-sonnet-v2@20241022",
+            "max_tokens": 1024,
+            "batch_size": 2
+        },
+        "gptO3": {
+            "model_name": "o3",
+            "max_tokens": 100,
+            "name": "O3",
+            "batch_size": 1
+        },
+        "gpt41": {
+            "model_name": "gpt-4.1-mini",
+            "max_tokens": 100,
+            "name": "GPT-4.1",
+            "batch_size": 1
+        }
+    },
+    "open_source_models": {
+        "qwen": {
+            "model_name": "Qwen/Qwen2.5-VL-7B-Instruct",
+            "batch_size": 2,
+            "max_tokens": 1024,
+            "min_pixels": 200704,
+            "max_pixels": 1003520,
+            "use_flash_attention": false,
+            "name": "Qwen"
+        },
+        "qvq": {
+            "model_name": "Qwen/QVQ-72B-Preview",
+            "batch_size": 1,
+            "max_tokens": 1024,
+            "use_flash_attention": true,
+            "name": "QVQ"
+        },
+        "docowl": {
+            "model_name": "mPLUG/DocOwl2",
+            "crop_anchors": "grid_12",
+            "input_size": 504,
+            "max_tokens": 1024,
+            "name": "DocOwl",
+            "batch_size": 1
+        },
+        "ovis": {
+            "model_name": "AIDC-AI/Ovis1.6-Gemma2-9B",
+            "max_length": 8192,
+            "max_tokens": 1024,
+            "name": "Ovis",
+            "batch_size": 1
+        },
+        "internvl": {
+            "model_name": "OpenGVLab/InternVL2_5-8B",
+            "max_tokens": 1024,
+            "name": "InternVL",
+            "batch_size": 1
+        },
+        "internvl3": {
+            "model_name": "OpenGVLab/InternVL3-9B",
+            "max_tokens": 1024,
+            "input_size": 448,
+            "name": "InternVL3",
+            "batch_size": 1
+        },
+        "internvl378": {
+            "model_name": "OpenGVLab/InternVL3-78B",
+            "max_tokens": 1024,
+            "input_size": 448,
+            "name": "InternVL3_78",
+            "batch_size": 1
+        },
+        "molmo": {
+            "model_name": "allenai/Molmo-7B-D-0924",
+            "batch_size": 2,
+            "max_tokens": 1024,
+            "name": "Molmo"
+        },
+        "phi": {
+            "name": "Phi",
+            "model_name": "microsoft/Phi-3.5-vision-instruct",
+            "batch_size":1,
+            "max_tokens": 1024
+        },
+        "phi4": {
+            "name": "Phi4",
+            "model_name": "microsoft/Phi-4-multimodal-instruct",
+            "batch_size":1,
+            "max_tokens": 1024
+        },
+        "deepseek": {
+            "name": "DeepSeek",
+            "model_name": "deepseek/deepseek-r1-0528:free",
+            "batch_size":1,
+            "max_tokens": 1024
+        },
+        "gemma": {
+            "name": "Gemma",
+            "model_name": "google/gemma-3-12b-it",
+            "batch_size":1,
+            "max_tokens": 1024
+        },
+        "gemma27": {
+            "name": "Gemma27",
+            "model_name": "",
+            "batch_size":3,
+            "max_tokens": 1024
+        },
+        "qwenollama": {
+            "name": "QwenOllama",
+            "model_name": "qwen2.5vl:72b-fp16",
+            "batch_size":3,
+            "max_tokens": 1024
+        },
+        "llava": {
+            "name": "Llava34",
+            "model_name": "",
+            "batch_size":2,
+            "max_tokens": 1024
+        },
+        "blip": {
+            "enabled": true,
+            "name": "Blip",
+            "model_name": "Salesforce/blip-vqa-base",
+            "batch_size": 1,
+            "max_tokens": 1024
+        },
+        "udop": {
+            "enabled": true,
+            "name": "Udop",
+            "model_name": "microsoft/udop-large",
+            "batch_size": 1,
+            "max_tokens": 1024
+        },
+        "layoutlmv3": {
+            "enabled": true,
+            "name": "LayoutLMv3",
+            "model_name": "rubentito/layoutlmv3-base-mpdocvqa",
+            "batch_size": 1,
+            "max_tokens": 1024
+        }
+
+    },
+    "input_file": "../MPDocVQA_filter_data_NEW.json",
+    "output_file": "vqa_analysis_results.json",
+    "sampling_percentage": 100,
+    "ocr_enabled": false,
+    "unable_to_respond_aware": false,
+    "images_base_path": "/data1/XXXX/VQA/data/mpdocvqa/images"
+}

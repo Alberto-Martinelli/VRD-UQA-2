@@ -1,0 +1,43 @@
+{
+  "paths": {
+    "base_path": "",
+    "augmented_dataset": "/corruption-scripts/results/MPDocVQA_augmented.json",
+    "output_corrupted": "/corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions.json",
+    "output_corrupted_cleaned": "/corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_cleaned.json",
+    "patch_saving_dir": "/corruption-scripts/results/MPDocVQA/patches",
+    "layout_saving_dir": "/corruption-scripts/results/MPDocVQA/layout"
+  },
+  "dataset": {
+    "type": "MPDocVQA",
+    "split": "train",
+    "dataset_json_path": "/data/qas/MPDocVQA_reduced.json"
+  },
+  "corruption": {
+    "percentage": 100,
+    "complexity": 3,
+    "generated_sample_per_complexity_greater_than_1": 5,
+    "types": {
+      "numerical": true,
+      "temporal": true,
+      "entity": true,
+      "location": true,
+      "document": true
+    }
+  },
+  "layout_analysis": {
+    "model": "Qwen/Qwen2.5-VL-7B-Instruct"
+  },
+  "model": {
+    "provider": "huggingface",
+    "name": "Qwen/Qwen2.5-7B"
+  },
+  "verification": {
+    "provider": "gemini",
+    "api_key": "",
+    "verification_input_file": "/corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_cleaned.json",
+    "verification_output_file": "/corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_verified.json",
+    "verification_percentage": 100,
+    "model_name": "gemini-2.5-flash",
+    "log_file": "/terminal_output.json"
+  }
+}
