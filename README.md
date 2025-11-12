@@ -3,7 +3,7 @@
 ## Benchmarking Visual LLMs Resilience to Unanswerable Questions on Visually Rich Documents
 
 </div>
-<div align="center">
+
 The evolution of Visual Large Language Models (VLLMs) has revolutionized the automatic understanding of Visually Rich Documents (VRDs), which contain both textual and visual elements.
 Although VLLMs excel in Visual Question Answering (VQA) on multi-page VRDs, their ability to detect unanswerable questions is still an open research question.
 Our research delves into the robustness of the VLLMs to plausible yet unanswerable questions, i.e., questions that appear valid but cannot be answered due to subtle corruptions
@@ -18,7 +18,7 @@ Experiments, run on 12 models, analyze:
 (3) The effectiveness of different knowledge injection strategies based on in-context learning (OCR, multi-page selection, or the possibility of unanswerability).
 Our findings reveal VLLMs' limitations and demonstrate that *VRD-UQA* can serve as an 
 evaluation framework for developing resilient document VQA systems. 
-</div>
+
 
 #### <div align="center"> Davide Napolitano, Luca Cagliero, Fabrizio Battiloro </div>
 #### <div align="center"> Accepted as Oral by The 40th Annual AAAI Conference on Artificial Intelligence (AAAI 2026) </div>
