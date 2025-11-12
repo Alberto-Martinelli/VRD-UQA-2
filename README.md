@@ -1,6 +1,8 @@
 <div align="center">
-  
+
 ## Benchmarking Visual LLMs Resilience to Unanswerable Questions on Visually Rich Documents
+
+</div>
 
 The evolution of Visual Large Language Models (VLLMs) has revolutionized the automatic understanding of Visually Rich Documents (VRDs), which contain both textual and visual elements.
 Although VLLMs excel in Visual Question Answering (VQA) on multi-page VRDs, their ability to detect unanswerable questions is still an open research question.
@@ -104,17 +106,4 @@ If you are interested in this work or have questions about the code, the paper o
 If you find this project useful, please consider citing:
 ```bibtex
 ```
-<!--
-**vqacorruption/vqacorruption** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
 
-Here are some ideas to get you started:
-
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
