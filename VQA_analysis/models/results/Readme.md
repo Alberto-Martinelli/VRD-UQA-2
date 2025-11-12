@@ -1,4 +1,4 @@
-Inside the llm folder you find all the scripts to include inside the generate dataset folder (e.g., results/MPDocVQA).
+Inside this folder you find all the scripts to include inside the generate dataset folder (e.g., results/MPDocVQA).
 
 The scripts include the processing of the metrics and the creation of tables and plots.
 
