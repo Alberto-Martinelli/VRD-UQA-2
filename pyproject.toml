@@ -1,0 +1,20 @@
+[project]
+name = "vrd-uqa"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "datasets>=4.6.1",
+    "doclayout-yolo>=0.0.4",
+    "gliner>=0.2.25",
+    "nltk>=3.9.3",
+    "ollama>=0.6.1",
+    "pandas>=3.0.1",
+    "qwen-vl-utils>=0.0.14",
+    "requests>=2.32.5",
+    "scikit-learn>=1.8.0",
+    "supervision>=0.27.0.post1",
+    "torchvision>=0.25.0",
+    "tqdm>=4.67.3",
+]
