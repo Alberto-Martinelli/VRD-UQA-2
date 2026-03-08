@@ -29,6 +29,12 @@ original_torch_load = torch.load
 
 class DocumentAnalyzer:
     def __init__(self, model_config=None, patch_saving_dir=None, layout_saving_dir=None):
+        """
+        Sets up 3 models:
+        1) DocLayout-YOLO-DocStructBench (output: bboxes around each element + element type)
+        2) GOT-OCR2_0 (Extracts text)
+        3) Qwen2-VL-2B-Instruct (Used to describe tables, figures, charts)
+        """
         if model_config is None:
             # Default configuration if none provided
             model_config = {
@@ -215,6 +221,11 @@ class DocumentAnalyzer:
             return f"Error analyzing {content_type}: {str(e)}"
 
     def crop_and_ocr(self, image_path, boxes, classes):
+        """
+        Step 3) For each detected document: crop the region, save the path to disk
+                + process tables and figures with analyze_visual_content (Qwen) and other elements with GOT-OCR 2.0
+        Step 4) Save JSON with all the results
+        """
         # Load the full image
         image = Image.open(image_path)
 
@@ -313,6 +324,12 @@ class DocumentAnalyzer:
         return results
 
     def analyze_pages_for_question(self, question_data):
+        """
+        Processes each document page for a question
+        Step 1) Run DocLayout-YOLO
+        Step 2) Filter overlapping boxes
+        Call crop_and_ocr() for each page
+        """
         results = {"pages": {}}
 
         try:
@@ -398,6 +415,7 @@ class DocumentAnalyzer:
                 )
 
         results = []
+        # Iterate through questions
         for index in tqdm(range(len(df)), desc="Analyzing document layouts"):
             row = df.iloc[index]
             question_data = row.to_dict()

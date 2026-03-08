@@ -20,6 +20,8 @@ from layout_with_ocr import DocumentAnalyzer
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def get_env_bool(key, default=False):
@@ -154,9 +156,9 @@ def main(config_path=None):
                 all_images_exist = False
 
     if all_images_exist:
-        print("\nAll images are present!")
+        print("\nAll images are present!\n")
     else:
-        print("\nSome images are missing!")
+        print("\nSome images are missing!\n")
 
     # Calculate the number of questions to corrupt
     num_questions_to_corrupt = int(len(df) * percentage / 100)
@@ -180,6 +182,7 @@ def main(config_path=None):
     )
     print("\n")
 
+    print("Setting up Entity Identifier...")
     entity_identifier = EntityIdentifier(
         dataset_type=dataset_type,
         # Five boolean flags from the config that act as filters for which categories of entities to detect
@@ -190,6 +193,7 @@ def main(config_path=None):
         document=document, # looks for document structural elements (Table 2, Section 3.1, page 4 etc.)
     )
 
+    print("Identifying entities for each question...")
     # Ensure questions is a list
     questions = df_to_corrupt["question"].tolist()
 
@@ -205,6 +209,11 @@ def main(config_path=None):
 
     print(f"Questions with identified entities: {questions_with_entities_count}")
 
+    print("\nExample of question with identified entities:")
+    for i, (question, entities) in enumerate(zip(questions[:3], question_with_entities[:3])):
+        print(f"\nQuestion {i+1}: {question}")
+        print(f"Entities: {entities}")
+
     # Process layout analysis
     print("\n")
     print(
@@ -213,7 +222,6 @@ def main(config_path=None):
     print("\n")
 
     if not os.path.exists(augmented_dataset_path):
-
         # Model configuration
         model_config = {
             "model_name": layout_model,
