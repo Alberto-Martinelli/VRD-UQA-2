@@ -2,6 +2,7 @@ commands.txt
 .venv/
 MPDocVQA_Drive/
 data/
+data 2/
 note.txt
 df_to_corrupt.csv
 

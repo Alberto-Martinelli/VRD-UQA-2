@@ -106,8 +106,9 @@ class EntityIdentifier:
             "default": 0.75,
         }
 
+    # core function
     def identify_entities(self, text):
-        sentences = sent_tokenize(text)
+        sentences = sent_tokenize(text) # spit the input into sentences (works better)
         all_entities = []
 
         for sentence in sentences:
@@ -134,7 +135,7 @@ class EntityIdentifier:
                 sub_sentences = [sentence]
 
             for sub_sentence in sub_sentences:
-                entities = self.model.predict_entities(sub_sentence, self.flat_labels)
+                entities = self.model.predict_entities(sub_sentence, self.flat_labels) # RUN GLiNER PREDICTION
                 # Filter entities based on their type-specific threshold
                 high_confidence_entities = [
                     entity

@@ -134,8 +134,9 @@ def main(config_path=None):
 
     data = DataLoader.load_dataset(base_path, config["dataset"]["split"], dataset_type, dataset_json_path)
     df = DataLoader.create_dataframe(data, dataset_type, base_path)
+    print(f"Total questions loaded: {len(df)}")
 
-    # Add image path existence check
+    # Check that all page_ids mentioned in the dataset have corresponding image files
     print("\nVerifying image file existence...")
     all_images_exist = True
     for idx, row in df.iterrows():
@@ -146,8 +147,8 @@ def main(config_path=None):
                 if not os.path.exists(image_path):
                     print(f"Warning: Image file not found at path: {image_path}")
                     all_images_exist = False
+        # Handle case where image_path is a single string
         else:
-            # Handle case where image_path is a single string
             if not os.path.exists(image_paths):
                 print(f"Warning: Image file not found at path: {image_paths}")
                 all_images_exist = False
@@ -181,11 +182,12 @@ def main(config_path=None):
 
     entity_identifier = EntityIdentifier(
         dataset_type=dataset_type,
-        numerical=numerical,
-        temporal=temporal,
-        entity=entity,
-        location=location,
-        document=document,
+        # Five boolean flags from the config that act as filters for which categories of entities to detect
+        numerical=numerical, # looks for numbers, quantities, percentages, etc.
+        temporal=temporal, # looks for dates, times, periods, etc.
+        entity=entity, # looks for people, organizations, products, etc.
+        location=location, # looks for places, addresses, etc.
+        document=document, # looks for document structural elements (Table 2, Section 3.1, page 4 etc.)
     )
 
     # Ensure questions is a list
