@@ -15,7 +15,7 @@ import numpy as np
 from transformers import (
     AutoModel,
     AutoTokenizer,
-    Qwen2VLForConditionalGeneration,
+    AutoModelForVision2Seq,
     AutoProcessor,
 )
 import io
@@ -77,6 +77,17 @@ class DocumentAnalyzer:
             sv.Color(128, 0, 0),  # Maroon
         ]
 
+        # Dynamically determine the best available hardware
+        if torch.cuda.is_available():
+            self.device_type = "cuda"
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device_type = "mps"
+            self.device = torch.device("mps")
+        else:
+            self.device_type = "cpu"
+            self.device = torch.device("cpu")
+
         # Initialize OCR model for CUDA
         self.tokenizer = AutoTokenizer.from_pretrained(
             "ucaslcl/GOT-OCR2_0", trust_remote_code=True
@@ -86,9 +97,9 @@ class DocumentAnalyzer:
             trust_remote_code=True,
             use_safetensors=True,
             pad_token_id=self.tokenizer.eos_token_id,
-            device_map="cuda",
+            device_map=self.device_type,
         )
-        self.ocr_model = self.ocr_model.eval().cuda()
+        self.ocr_model = self.ocr_model.eval().to(self.device)
 
         # Define class names mapping
         self.class_names = {
@@ -105,8 +116,8 @@ class DocumentAnalyzer:
         }
 
         # Initialize Qwen2-VL model with config parameters
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.qwen_model = Qwen2VLForConditionalGeneration.from_pretrained(
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.qwen_model = AutoModelForVision2Seq.from_pretrained(
             model_config["model_name"], torch_dtype="auto", device_map="auto"
         )
 
@@ -226,6 +237,13 @@ class DocumentAnalyzer:
                 + process tables and figures with analyze_visual_content (Qwen) and other elements with GOT-OCR 2.0
         Step 4) Save JSON with all the results
         """
+        import contextlib
+        # Use autocast for the specific hardware, or null context for CPU
+        if self.device_type in ["cuda", "mps"]:
+            autocast_context = torch.autocast(device_type=self.device_type)
+        else:
+            autocast_context = contextlib.nullcontext()
+        
         # Load the full image
         image = Image.open(image_path)
 
@@ -276,7 +294,7 @@ class DocumentAnalyzer:
                                 f"Visual analysis failed for {class_name} {idx}: {ocr_result}"
                             )
                             # Fallback to OCR for failed visual analysis
-                            with torch.amp.autocast("cuda"):
+                            with autocast_context:
                                 with torch.no_grad():
                                     ocr_result = self.ocr_model.chat(
                                         self.tokenizer, patch_path, ocr_type="ocr"
@@ -286,14 +304,14 @@ class DocumentAnalyzer:
                             f"Error in visual analysis for {class_name} {idx}: {str(e)}"
                         )
                         # Fallback to OCR
-                        with torch.amp.autocast("cuda"):
+                        with autocast_context:
                             with torch.no_grad():
                                 ocr_result = self.ocr_model.chat(
                                     self.tokenizer, patch_path, ocr_type="ocr"
                                 )
                 else:
                     # For other classes, use OCR model
-                    with torch.amp.autocast("cuda"):
+                    with autocast_context:
                         with torch.no_grad():
                             ocr_result = self.ocr_model.chat(
                                 self.tokenizer, patch_path, ocr_type="ocr"
@@ -314,7 +332,10 @@ class DocumentAnalyzer:
 
             # Clear CUDA cache periodically
             if idx % 10 == 0:
-                torch.cuda.empty_cache()
+                if self.device_type == "cuda":
+                    torch.cuda.empty_cache()
+                elif self.device_type == "mps":
+                    torch.mps.empty_cache()
 
         os.makedirs(self.layout_saving_dir, exist_ok=True)
         json_path = f"{self.layout_saving_dir}/{page_id}.json"
@@ -385,9 +406,11 @@ class DocumentAnalyzer:
                         "image_path": document,
                     }
 
-                # Clear CUDA cache after each page
-                if torch.cuda.is_available():
+                # Clear cache after each page based on device
+                if self.device_type == "cuda":
                     torch.cuda.empty_cache()
+                elif self.device_type == "mps":
+                    torch.mps.empty_cache()
 
         except Exception as e:
             logging.error(f"Error in analyze_pages_for_question: {str(e)}")
