@@ -5,6 +5,7 @@ data/
 data 2/
 note.txt
 df_to_corrupt.csv
+corruption-scripts/results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

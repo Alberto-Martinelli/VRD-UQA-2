@@ -243,20 +243,23 @@ def main(config_path=None):
     )
     print("\n")
 
+    # Load and enrich the augmented dataset created in the previous step
     with open(augmented_dataset_path, "r", encoding="utf-8") as file:
         augmented_dataset = json.load(file)
-
-    # Count total questions
     num_questions = len(augmented_dataset.keys())
     print(f"Total number of questions in dataset: {num_questions}")
 
-    # Convert to DataFrame and extract questions from nested structure
+    # Convert the augmented dataset to DataFrame and extract its questions
     df_augmented = pd.DataFrame(augmented_dataset).T
     df_augmented["question"] = df_augmented["question_data"].apply(
         lambda x: x["question"]
     )
 
+    # Locate all the original answers
     def find_answer_bbox(row):
+        """
+        Locates where the original answer appears in the layout (page, object type, bounding box)
+        """
         answers = row["question_data"]["answers"]
         answer_page_idx = row["question_data"]["answer_page_idx"]
         document = row["question_data"]["document"]
@@ -296,8 +299,11 @@ def main(config_path=None):
         find_answer_bbox, axis=1
     )
 
-    # Function to process layout objects and identify entities in OCR text
+    # Identify entities for questions and layout objects (performs NER via GLiNER on the OCR text of every layout object across all pages) 
     def process_layout_objects(row):
+        """
+        Function to process layout objects (tables, figures, ...) and identify entities in OCR text
+        """
         layout_analysis = row.get("layout_analysis", {}).get("pages", {})
         patch_entities = {}
 
@@ -321,12 +327,12 @@ def main(config_path=None):
 
         return patch_entities
 
-    # Identify entities for questions and layout objects
     df_augmented["question_entities"] = df_augmented["question"].apply(
         entity_identifier.identify_entities
     )
     df_augmented["patch_entities"] = df_augmented.apply(process_layout_objects, axis=1)
 
+    # CONFIGURE THE CORRUPTION ENGINE
     # Load the model once
     model_loader = ModelLoader.get_instance()
     model_loader.load_model(model_provider, model_name)
@@ -339,6 +345,7 @@ def main(config_path=None):
         complexity=complexity, in_document=True, out_document=True, generated_sample_per_complexity_greater_than_1=generated_sample_per_complexity_greater_than_1
     )
 
+    # CORRUPT EACH QUESTION
     tqdm.pandas(desc="Corrupting and Verifying (In-Context)")
     df_in_context = df_augmented.copy()
 
@@ -346,9 +353,9 @@ def main(config_path=None):
         # Create a dictionary with all the necessary information
         question_data = {
             "question": row["question"],
-            "question_entities": row["question_entities"],
-            "original_answer_locations": row["original_answer_locations"],
-            "patch_entities": row["patch_entities"],
+            "question_entities": row["question_entities"] or [],
+            "original_answer_locations": row["original_answer_locations"] or [],
+            "patch_entities": row["patch_entities"] or [],
             "context": row,  # Pass the entire row as context if needed
         }
 
