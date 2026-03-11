@@ -16,6 +16,7 @@ from transformers import (
     AutoModel,
     AutoTokenizer,
     AutoModelForVision2Seq,
+    AutoModelForImageTextToText,
     AutoProcessor,
 )
 import io
@@ -81,9 +82,9 @@ class DocumentAnalyzer:
         if torch.cuda.is_available():
             self.device_type = "cuda"
             self.device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            self.device_type = "mps"
-            self.device = torch.device("mps")
+        # elif torch.backends.mps.is_available():
+        #     self.device_type = "mps"
+        #     self.device = torch.device("mps")
         else:
             self.device_type = "cpu"
             self.device = torch.device("cpu")
@@ -116,10 +117,18 @@ class DocumentAnalyzer:
         }
 
         # Initialize Qwen2-VL model with config parameters
-        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.qwen_model = AutoModelForVision2Seq.from_pretrained(
-            model_config["model_name"], torch_dtype="auto", device_map="auto"
-        )
+        # Force float16 for Mac MPS compatibility, otherwise use auto
+        model_dtype = torch.float16 if self.device_type == "mps" else "auto"
+        # self.qwen_model = AutoModelForVision2Seq.from_pretrained(
+        #     model_config["model_name"], 
+        #     torch_dtype=model_dtype, 
+        #     device_map="auto"
+        # )
+        # Note: We removed device_map="auto" to prevent the fatal disk-offloading crash
+        self.qwen_model = AutoModelForImageTextToText.from_pretrained(
+            model_config["model_name"], 
+            torch_dtype=model_dtype
+        ).to(self.device)
 
         # Set processor with specific pixel limits from config
         min_pixels = model_config.get("min_pixels", 256 * 28 * 28)
