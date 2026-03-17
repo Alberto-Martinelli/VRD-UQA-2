@@ -106,23 +106,17 @@ def main(config_path=None):
     )
 
     print("Identifying entities for each question...")
-    # Ensure questions is a list
-    questions = df_to_corrupt["question"].tolist()
 
+    questions_list = df_to_corrupt["question"].tolist()
     question_with_entities = []
-    for question in questions:
+    for question in questions_list:
         entities = entity_identifier.identify_entities(question)
         question_with_entities.append(entities)
 
-    # Count questions with entities
-    questions_with_entities_count = sum(
-        1 for entities in question_with_entities if entities
-    )
-
-    print(f"Questions with identified entities: {questions_with_entities_count}")
+    print(f"Questions with identified entities: {sum(1 for entities in question_with_entities if entities)}")
 
     print("\nExample of question with identified entities:")
-    for i, (question, entities) in enumerate(zip(questions[:3], question_with_entities[:3])):
+    for i, (question, entities) in enumerate(zip(questions_list[:3], question_with_entities[:3])):
         print(f"\nQuestion {i+1}: {question}")
         print(f"Entities: {entities}")
 
@@ -158,8 +152,7 @@ def main(config_path=None):
     # Load and enrich the augmented dataset created in the previous step
     with open(params["augmented_dataset_path"], "r", encoding="utf-8") as file:
         augmented_dataset = json.load(file)
-    num_questions = len(augmented_dataset.keys())
-    print(f"Total number of questions in dataset: {num_questions}")
+    print(f"Total number of questions in dataset: {len(augmented_dataset.keys())}")
 
     # Convert the augmented dataset to DataFrame and extract its questions
     df_augmented = pd.DataFrame(augmented_dataset).T
