@@ -6,7 +6,7 @@ import json
 
 class DataLoader:
     @staticmethod
-    def load_dataset(base_path, split_type, dataset_name, dataset_json_path=None):
+    def load_dataset(base_path: str, split_type: str, dataset_name: str, dataset_json_path: str = None) -> dict:
         if dataset_name == "DUDE":
             path = (
                 dataset_json_path
@@ -32,11 +32,11 @@ class DataLoader:
             raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
     @staticmethod
-    def create_dataframe(data, dataset_name, base_path, dataset_json_path):
+    def create_dataframe(raw_dataset_dict: dict, dataset_name: str, base_path: str, dataset_json_path: str) -> pd.DataFrame:
         if dataset_name == "MPDocVQA":
             path = os.path.join(base_path, dataset_json_path)
-            df = pd.DataFrame(data["data"])
-            df["docId"] = df["doc_id"]
+            df = pd.DataFrame(raw_dataset_dict["data"])
+            df["docId"] = df["doc_id"] 
             df["questionId"] = df["questionId"].astype(str)
             df["document"] = df["page_ids"].apply(
                 lambda x: [
@@ -49,7 +49,7 @@ class DataLoader:
 
         elif dataset_name == "DUDE":
             # Create DataFrame with same structure as MPDocVQA
-            df = pd.DataFrame(data["data"])
+            df = pd.DataFrame(raw_dataset_dict["data"])
 
             # Filter out questions with empty bounding boxes, empty answers, and train split
             def check_bounding_boxes(x):

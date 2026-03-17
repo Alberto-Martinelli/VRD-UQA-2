@@ -16,6 +16,7 @@ import numpy as np
 import gc
 import torch
 from layout_with_ocr import DocumentAnalyzer
+from utils.config_utils import load_config, extract_config, print_parameters
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -26,91 +27,6 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 def get_env_bool(key, default=False):
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
-
-def get_default_config():
-    return {
-        "paths": {
-            "base_path": "./",
-            "augmented_dataset": "MPDocVQA_augmented.json",
-            "output_corrupted": "unanswerable_corrupted_questions.json",
-            "output_corrupted_cleaned": "unanswerable_corrupted_questions_cleaned.json",
-            "patch_saving_dir": "./patches",
-            "layout_saving_dir": "./layouts"
-        },
-        "dataset": {"type": "MPDocVQA", "split": "train"},
-        "corruption": {
-            "percentage": 10,
-            "complexity": 3,
-            "generated_sample_per_complexity_greater_than_1": 5,
-            "types": {
-                "numerical": True,
-                "temporal": True,
-                "entity": True,
-                "location": True,
-                "document": True,
-            },
-        },
-        "layout_analysis": {
-            "model": "Qwen/Qwen2-VL-2B-Instruct",
-        },
-        "model": {
-            "provider": "ollama",
-            "name": "llama3.2",
-        }
-    }
-
-def load_config(config_path="code/corruption-scripts/config.json"):
-    """Load configuration from JSON file."""
-    try:
-        with open(config_path, "r") as f:
-            config = json.load(f)
-            if config is None:
-                return get_default_config()
-        return config
-    except FileNotFoundError:
-        print(f"Config file not found at {config_path}. Using default configuration.")
-        return get_default_config()
-    except json.JSONDecodeError:
-        print(
-            f"Error parsing config file at {config_path}. Using default configuration."
-        )
-        return get_default_config()
-
-def extract_config(config):
-    paths = config["paths"]
-    dataset = config["dataset"]
-    corruption = config["corruption"]
-    layout = config["layout_analysis"]
-    model_cfg = config["model"]
-    types = corruption["types"]
-
-    return {
-        "base_path": paths["base_path"],
-        "dataset_name": dataset["name"],
-        "dataset_json_path": dataset.get("dataset_json_path"),
-        "augmented_dataset_path": paths["augmented_dataset"],
-        "output_corrupted": paths["output_corrupted"],
-        "output_corrupted_cleaned": paths["output_corrupted_cleaned"],
-        "patch_saving_dir": paths["patch_saving_dir"],
-        "layout_saving_dir": paths["layout_saving_dir"],
-        "percentage": float(corruption["percentage"]),
-        "complexity": int(corruption["complexity"]),
-        "generated_sample_per_complexity_greater_than_1": int(corruption["generated_sample_per_complexity_greater_than_1"]),
-        "layout_model": layout["model"],
-        "model_provider": model_cfg["provider"],
-        "model_name": model_cfg["name"],
-        "numerical": types["numerical"],
-        "temporal": types["temporal"],
-        "entity": types["entity"],
-        "location": types["location"],
-        "document": types["document"],
-        "split": dataset.get("split", "train"),
-    }
-
-def print_parameters(params):
-    print("\nUsing the following parameters:")
-    for k, v in params.items():
-        print(f"{k.replace('_', ' ').capitalize()}: {v}")
 
 def main(config_path=None):
     print("Starting the question corruption and verification process...")
@@ -127,43 +43,46 @@ def main(config_path=None):
     )
     print("\n")
 
-    data = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
-    df = DataLoader.create_dataframe(data, params["dataset_name"], params["base_path"], params["dataset_json_path"])
-    print(f"Total questions loaded: {len(df)}")
+    raw_dataset_dict = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
+    questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"])
+    print(f"Total questions loaded: {len(questions_df)}")
 
-    # Check that all page_ids mentioned in the dataset have corresponding image files
-    print("\nVerifying image file existence...")
-    all_images_exist = True
-    for idx, row in df.iterrows():
-        image_paths = row["image_path"]
-        # Handle case where image_path is a list
-        if isinstance(image_paths, list):
-            for image_path in image_paths:
-                if not os.path.exists(image_path):
-                    print(f"Warning: Image file not found at path: {image_path}")
+    def verify_images(questions_df):
+        # Check that all page_ids mentioned in the dataset have corresponding image files
+        print("\nVerifying image file existence...")
+        all_images_exist = True
+        for idx, row in questions_df.iterrows():
+            image_paths = row["image_path"]
+            # Handle case where image_path is a list
+            if isinstance(image_paths, list):
+                for image_path in image_paths:
+                    if not os.path.exists(image_path):
+                        print(f"Warning: Image file not found at path: {image_path}")
+                        all_images_exist = False
+            # Handle case where image_path is a single string
+            else:
+                if not os.path.exists(image_paths):
+                    print(f"Warning: Image file not found at path: {image_paths}")
                     all_images_exist = False
-        # Handle case where image_path is a single string
+
+        if all_images_exist:
+            print("\nAll images are present!\n")
         else:
-            if not os.path.exists(image_paths):
-                print(f"Warning: Image file not found at path: {image_paths}")
-                all_images_exist = False
+            print("\nSome images are missing!\n")
+        return all_images_exist
 
-    if all_images_exist:
-        print("\nAll images are present!\n")
-    else:
-        print("\nSome images are missing!\n")
-
+    verify_images(questions_df)
     # Calculate the number of questions to corrupt
-    num_questions_to_corrupt = int(len(df) * params["percentage"] / 100)
+    num_questions_to_corrupt = int(len(questions_df) * params["percentage"] / 100)
     # Ensure we don't try to sample more questions than available
-    num_questions_to_corrupt = min(num_questions_to_corrupt, len(df))
+    num_questions_to_corrupt = min(num_questions_to_corrupt, len(questions_df))
 
     # Sample questions with non-null answers
-    df_to_corrupt = df.sample(n=num_questions_to_corrupt)
+    df_to_corrupt = questions_df.sample(n=num_questions_to_corrupt)
 
     # Print information about the sampled data
     print(
-        f"Number of questions selected for corruption: {len(df_to_corrupt)}/{len(df)}"
+        f"Number of questions selected for corruption: {len(df_to_corrupt)}/{len(questions_df)}"
     )
 
     df_to_corrupt.to_csv("df_to_corrupt.csv")
