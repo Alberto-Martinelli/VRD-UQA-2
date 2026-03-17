@@ -8,7 +8,7 @@
     "layout_saving_dir": "./corruption-scripts/results/MPDocVQA/layout"
   },
   "dataset": {
-    "type": "MPDocVQA",
+    "name": "MPDocVQA",
     "split": "train",
     "dataset_json_path": "./data_sample/qas"
   },

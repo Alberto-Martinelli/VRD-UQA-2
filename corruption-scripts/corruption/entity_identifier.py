@@ -16,14 +16,14 @@ class EntityIdentifier:
 
     def __init__(
         self,
-        dataset_type,
+        dataset_name,
         numerical=True,
         temporal=True,
         entity=True,
         location=True,
         document=True,
     ):
-        self.dataset_type = dataset_type
+        self.dataset_name = dataset_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"EntityIdentifier using device: {self.device}")
         self.model = GLiNER.from_pretrained("urchade/gliner_largev2").to(self.device)
@@ -173,12 +173,12 @@ class EntityIdentifier:
                 with open(ocr_file_path, "r") as f:
                     ocr_data = json.load(f)
 
-                if self.dataset_type == "MPDocVQA":
+                if self.dataset_name == "MPDocVQA":
                     self.process_mpdocvqa_ocr(ocr_data, text, ocr_file_path)
-                elif self.dataset_type == "DUDE":
+                elif self.dataset_name == "DUDE":
                     self.process_dude_ocr(ocr_data, text, ocr_file_path)
                 else:
-                    logging.error(f"Unknown dataset type: {self.dataset_type}")
+                    logging.error(f"Unknown dataset type: {self.dataset_name}")
             except Exception as e:
                 logging.error(f"Error processing OCR file {ocr_file_path}: {str(e)}")
         return text

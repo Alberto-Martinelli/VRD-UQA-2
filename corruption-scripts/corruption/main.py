@@ -86,7 +86,7 @@ def extract_config(config):
 
     return {
         "base_path": paths["base_path"],
-        "dataset_type": dataset["type"],
+        "dataset_name": dataset["name"],
         "dataset_json_path": dataset.get("dataset_json_path"),
         "augmented_dataset_path": paths["augmented_dataset"],
         "output_corrupted": paths["output_corrupted"],
@@ -112,13 +112,11 @@ def print_parameters(params):
     for k, v in params.items():
         print(f"{k.replace('_', ' ').capitalize()}: {v}")
 
-
 def main(config_path=None):
     print("Starting the question corruption and verification process...")
 
     # Load configuration
     config = load_config(config_path)
-
     params = extract_config(config)
     print_parameters(params)
 
@@ -129,8 +127,8 @@ def main(config_path=None):
     )
     print("\n")
 
-    data = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_type"], params["dataset_json_path"])
-    df = DataLoader.create_dataframe(data, params["dataset_type"], params["base_path"], params["dataset_json_path"])
+    data = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
+    df = DataLoader.create_dataframe(data, params["dataset_name"], params["base_path"], params["dataset_json_path"])
     print(f"Total questions loaded: {len(df)}")
 
     # Check that all page_ids mentioned in the dataset have corresponding image files
@@ -179,7 +177,7 @@ def main(config_path=None):
 
     print("Setting up Entity Identifier...")
     entity_identifier = EntityIdentifier(
-        dataset_type=params["dataset_type"],
+        dataset_name=params["dataset_name"],
         # Five boolean flags from the config that act as filters for which categories of entities to detect
         numerical=params["numerical"], # looks for numbers, quantities, percentages, etc.
         temporal=params["temporal"], # looks for dates, times, periods, etc.
