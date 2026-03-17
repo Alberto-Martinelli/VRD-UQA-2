@@ -6,13 +6,13 @@ import json
 
 class DataLoader:
     @staticmethod
-    def load_dataset(dataset_path, split_type, dataset_type, dataset_json_path=None):
-        if dataset_type == "DUDE":
+    def load_dataset(base_path, split_type, dataset_name, dataset_json_path=None):
+        if dataset_name == "DUDE":
             path = (
                 dataset_json_path
                 if dataset_json_path
                 else os.path.join(
-                    dataset_path,
+                    base_path,
                     "data/DUDE_train-val-test_binaries",
                     "2023-03-23_DUDE_gt_test_PUBLIC.json",
                 )
@@ -24,17 +24,17 @@ class DataLoader:
                 raise FileNotFoundError(
                     f"Dataset not found at {path}. Please check the path and ensure the dataset is in the correct format."
                 )
-        elif dataset_type == "MPDocVQA":
-            path = os.path.join(dataset_path, "data/qas", f"{split_type}.json")
+        elif dataset_name == "MPDocVQA":
+            path = os.path.join(base_path, dataset_json_path, f"{split_type}.json")
             with open(path, "r") as file:
                 return json.load(file)
         else:
-            raise ValueError(f"Unsupported dataset type: {dataset_type}")
+            raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
     @staticmethod
-    def create_dataframe(data, dataset_type, base_path):
-        if dataset_type == "MPDocVQA":
-            path = os.path.join(base_path, "data/qas")
+    def create_dataframe(data, dataset_name, base_path, dataset_json_path):
+        if dataset_name == "MPDocVQA":
+            path = os.path.join(base_path, dataset_json_path)
             df = pd.DataFrame(data["data"])
             df["docId"] = df["doc_id"]
             df["questionId"] = df["questionId"].astype(str)
@@ -47,7 +47,7 @@ class DataLoader:
             df["answers"] = df["answers"]
             df["answers_page_idx"] = df["answer_page_idx"]
 
-        elif dataset_type == "DUDE":
+        elif dataset_name == "DUDE":
             # Create DataFrame with same structure as MPDocVQA
             df = pd.DataFrame(data["data"])
 
@@ -123,7 +123,7 @@ class DataLoader:
             ]
 
         else:
-            raise ValueError(f"Unsupported dataset type: {dataset_type}")
+            raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
         df["image_path"] = df["document"]
         return df

@@ -27,21 +27,90 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 def get_env_bool(key, default=False):
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
 
+def get_default_config():
+    return {
+        "paths": {
+            "base_path": "./",
+            "augmented_dataset": "MPDocVQA_augmented.json",
+            "output_corrupted": "unanswerable_corrupted_questions.json",
+            "output_corrupted_cleaned": "unanswerable_corrupted_questions_cleaned.json",
+            "patch_saving_dir": "./patches",
+            "layout_saving_dir": "./layouts"
+        },
+        "dataset": {"type": "MPDocVQA", "split": "train"},
+        "corruption": {
+            "percentage": 10,
+            "complexity": 3,
+            "generated_sample_per_complexity_greater_than_1": 5,
+            "types": {
+                "numerical": True,
+                "temporal": True,
+                "entity": True,
+                "location": True,
+                "document": True,
+            },
+        },
+        "layout_analysis": {
+            "model": "Qwen/Qwen2-VL-2B-Instruct",
+        },
+        "model": {
+            "provider": "ollama",
+            "name": "llama3.2",
+        }
+    }
 
 def load_config(config_path="code/corruption-scripts/config.json"):
     """Load configuration from JSON file."""
     try:
         with open(config_path, "r") as f:
             config = json.load(f)
+            if config is None:
+                return get_default_config()
         return config
     except FileNotFoundError:
         print(f"Config file not found at {config_path}. Using default configuration.")
-        return None
+        return get_default_config()
     except json.JSONDecodeError:
         print(
             f"Error parsing config file at {config_path}. Using default configuration."
         )
-        return None
+        return get_default_config()
+
+def extract_config(config):
+    paths = config["paths"]
+    dataset = config["dataset"]
+    corruption = config["corruption"]
+    layout = config["layout_analysis"]
+    model_cfg = config["model"]
+    types = corruption["types"]
+
+    return {
+        "base_path": paths["base_path"],
+        "dataset_type": dataset["type"],
+        "dataset_json_path": dataset.get("dataset_json_path"),
+        "augmented_dataset_path": paths["augmented_dataset"],
+        "output_corrupted": paths["output_corrupted"],
+        "output_corrupted_cleaned": paths["output_corrupted_cleaned"],
+        "patch_saving_dir": paths["patch_saving_dir"],
+        "layout_saving_dir": paths["layout_saving_dir"],
+        "percentage": float(corruption["percentage"]),
+        "complexity": int(corruption["complexity"]),
+        "generated_sample_per_complexity_greater_than_1": int(corruption["generated_sample_per_complexity_greater_than_1"]),
+        "layout_model": layout["model"],
+        "model_provider": model_cfg["provider"],
+        "model_name": model_cfg["name"],
+        "numerical": types["numerical"],
+        "temporal": types["temporal"],
+        "entity": types["entity"],
+        "location": types["location"],
+        "document": types["document"],
+        "split": dataset.get("split", "train"),
+    }
+
+def print_parameters(params):
+    print("\nUsing the following parameters:")
+    for k, v in params.items():
+        print(f"{k.replace('_', ' ').capitalize()}: {v}")
 
 
 def main(config_path=None):
@@ -50,82 +119,8 @@ def main(config_path=None):
     # Load configuration
     config = load_config(config_path)
 
-    if config is None:
-        # Use default configuration
-        config = {
-            "paths": {
-                "base_path": "./",
-                "augmented_dataset": "MPDocVQA_augmented.json",
-                "output_corrupted": "unanswerable_corrupted_questions.json",
-                "output_corrupted_cleaned": "unanswerable_corrupted_questions_cleaned.json",
-                "patch_saving_dir": "./patches",
-                "layout_saving_dir": "./layouts"
-            },
-            "dataset": {"type": "MPDocVQA", "split": "train"},
-            "corruption": {
-                "percentage": 10,
-                "complexity": 3,
-                "generated_sample_per_complexity_greater_than_1": 5,
-                "types": {
-                    "numerical": True,
-                    "temporal": True,
-                    "entity": True,
-                    "location": True,
-                    "document": True,
-                },
-            },
-            "layout_analysis": {
-                "model": "Qwen/Qwen2-VL-2B-Instruct",
-            },
-            "model": {
-                "provider": "ollama",
-                "name": "llama3.2",
-            },
-        }
-
-    # Extract configuration values
-    base_path = config["paths"]["base_path"]
-    dataset_type = config["dataset"]["type"]
-    dataset_json_path = config["dataset"]["dataset_json_path"]
-    augmented_dataset_path = config["paths"]["augmented_dataset"]
-    output_corrupted = config["paths"]["output_corrupted"]
-    output_corrupted_cleaned = config["paths"]["output_corrupted_cleaned"]
-    patch_saving_dir = config["paths"]["patch_saving_dir"]
-    layout_saving_dir = config["paths"]["layout_saving_dir"]
-    percentage = float(config["corruption"]["percentage"])
-    complexity = int(config["corruption"]["complexity"])
-    generated_sample_per_complexity_greater_than_1 = int(config["corruption"]["generated_sample_per_complexity_greater_than_1"])
-    layout_model = config["layout_analysis"]["model"]
-    model_provider = config["model"]["provider"]
-    model_name = config["model"]["name"]
-
-    # Extract corruption types
-    numerical = config["corruption"]["types"]["numerical"]
-    temporal = config["corruption"]["types"]["temporal"]
-    entity = config["corruption"]["types"]["entity"]
-    location = config["corruption"]["types"]["location"]
-    document = config["corruption"]["types"]["document"]
-
-    # Print the final values for verification
-    print("\nUsing the following parameters:")
-    print(f"Base path: {base_path}")
-    print(f"Dataset type: {dataset_type}")
-    print(f"Dataset JSON path: {dataset_json_path}")
-    print(f"Output corrupted questions file: {output_corrupted}")
-    print(f"Output corrupted questions cleaned file: {output_corrupted_cleaned}")
-    print(f"Patch saving directory: {patch_saving_dir}")
-    print(f"Layout saving directory: {layout_saving_dir}")
-    print(f"Percentage of questions to change: {percentage}%")
-    print(f"Complexity grade: {complexity}")
-    print(f"Generated sample per complexity greater than 1: {generated_sample_per_complexity_greater_than_1}")
-    print(f"Layout model: {layout_model}")
-    print(f"Model provider: {model_provider}")
-    print(f"Model name: {model_name}")
-    print(f"Numerical Corruption: {'Included' if numerical else 'Excluded'}")
-    print(f"Temporal Corruption: {'Included' if temporal else 'Excluded'}")
-    print(f"Entity Corruption: {'Included' if entity else 'Excluded'}")
-    print(f"Location Corruption: {'Included' if location else 'Excluded'}")
-    print(f"Document Structure Corruption: {'Included' if document else 'Excluded'}")
+    params = extract_config(config)
+    print_parameters(params)
 
     # Load data
     print("\n")
@@ -134,8 +129,8 @@ def main(config_path=None):
     )
     print("\n")
 
-    data = DataLoader.load_dataset(base_path, config["dataset"]["split"], dataset_type, dataset_json_path)
-    df = DataLoader.create_dataframe(data, dataset_type, base_path)
+    data = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_type"], params["dataset_json_path"])
+    df = DataLoader.create_dataframe(data, params["dataset_type"], params["base_path"], params["dataset_json_path"])
     print(f"Total questions loaded: {len(df)}")
 
     # Check that all page_ids mentioned in the dataset have corresponding image files
@@ -161,7 +156,7 @@ def main(config_path=None):
         print("\nSome images are missing!\n")
 
     # Calculate the number of questions to corrupt
-    num_questions_to_corrupt = int(len(df) * percentage / 100)
+    num_questions_to_corrupt = int(len(df) * params["percentage"] / 100)
     # Ensure we don't try to sample more questions than available
     num_questions_to_corrupt = min(num_questions_to_corrupt, len(df))
 
@@ -184,13 +179,13 @@ def main(config_path=None):
 
     print("Setting up Entity Identifier...")
     entity_identifier = EntityIdentifier(
-        dataset_type=dataset_type,
+        dataset_type=params["dataset_type"],
         # Five boolean flags from the config that act as filters for which categories of entities to detect
-        numerical=numerical, # looks for numbers, quantities, percentages, etc.
-        temporal=temporal, # looks for dates, times, periods, etc.
-        entity=entity, # looks for people, organizations, products, etc.
-        location=location, # looks for places, addresses, etc.
-        document=document, # looks for document structural elements (Table 2, Section 3.1, page 4 etc.)
+        numerical=params["numerical"], # looks for numbers, quantities, percentages, etc.
+        temporal=params["temporal"], # looks for dates, times, periods, etc.
+        entity=params["entity"], # looks for people, organizations, products, etc.
+        location=params["location"], # looks for places, addresses, etc.
+        document=params["document"], # looks for document structural elements (Table 2, Section 3.1, page 4 etc.)
     )
 
     print("Identifying entities for each question...")
@@ -221,20 +216,20 @@ def main(config_path=None):
     )
     print("\n")
 
-    if not os.path.exists(augmented_dataset_path):
+    if not os.path.exists(params["augmented_dataset_path"]):
         # Model configuration
         model_config = {
-            "model_name": layout_model,
+            "model_name": params["layout_model"],
             "min_pixels": 256 * 28 * 28,
             "max_pixels": 720 * 28 * 28,
         }
 
         # Initialize DocumentAnalyzer with config
-        document_analyzer = DocumentAnalyzer(model_config, patch_saving_dir, layout_saving_dir)
+        document_analyzer = DocumentAnalyzer(model_config, params["patch_saving_dir"], params["layout_saving_dir"])
 
         # Process the dataframe to add layout analysis
         df_to_corrupt = document_analyzer.process_dataset_questions(
-            df_to_corrupt, augmented_dataset_path
+            df_to_corrupt, params["augmented_dataset_path"]
         )
 
     print("\n")
@@ -244,7 +239,7 @@ def main(config_path=None):
     print("\n")
 
     # Load and enrich the augmented dataset created in the previous step
-    with open(augmented_dataset_path, "r", encoding="utf-8") as file:
+    with open(params["augmented_dataset_path"], "r", encoding="utf-8") as file:
         augmented_dataset = json.load(file)
     num_questions = len(augmented_dataset.keys())
     print(f"Total number of questions in dataset: {num_questions}")
@@ -335,14 +330,14 @@ def main(config_path=None):
     # CONFIGURE THE CORRUPTION ENGINE
     # Load the model once
     model_loader = ModelLoader.get_instance()
-    model_loader.load_model(model_provider, model_name)
+    model_loader.load_model(params["model_provider"], params["model_name"])
 
     # Set the model_loader for InContextModifier (no need to reload)
     InContextModifier.set_model_loader(model_loader)
 
     # Set other parameters for InContextModifier
     InContextModifier.set_parameters(
-        complexity=complexity, in_document=True, out_document=True, generated_sample_per_complexity_greater_than_1=generated_sample_per_complexity_greater_than_1
+        complexity=params["complexity"], in_document=True, out_document=True, generated_sample_per_complexity_greater_than_1=params["generated_sample_per_complexity_greater_than_1"]
     )
 
     # CORRUPT EACH QUESTION
@@ -537,7 +532,7 @@ def main(config_path=None):
     output_data = {"corrupted_questions": serializable_records, "metadata": metadata}
 
     # Save to JSON with all the information
-    with open(output_corrupted, "w") as f:
+    with open(params["output_corrupted"], "w") as f:
         json.dump(output_data, f, indent=2)
 
     def clean_corrupted_questions(input_file, output_file):
@@ -578,7 +573,7 @@ def main(config_path=None):
         return removed_count
 
     # Update the print statement after calling the function
-    removed = clean_corrupted_questions(output_corrupted, output_corrupted_cleaned)
+    removed = clean_corrupted_questions(params["output_corrupted"], params["output_corrupted_cleaned"])
     print(f"Removed {removed['duplicates']} questions where corrupted matched original")
     print(f"Removed {removed['invalid_format']} questions with invalid format")
 
@@ -589,6 +584,7 @@ def main(config_path=None):
     print(
         "----------------------------------- Process completed successfully! -----------------------------------"
     )
+    print("\n")
 
 
 if __name__ == "__main__":

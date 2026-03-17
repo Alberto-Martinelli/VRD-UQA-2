@@ -1,11 +1,12 @@
 commands.txt
 .venv/
 MPDocVQA_Drive/
-data/
-data 2/
 note.txt
 df_to_corrupt.csv
 corruption-scripts/results/
+data/
+data_full/
+data_sample/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

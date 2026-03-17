@@ -35,9 +35,9 @@ evaluation framework for developing resilient document VQA systems.
 \* Link to original dataset repository
 
 The "Reduced" row contains:
-- the subsets of questions taken from the full datasets,
-- the OCR and Layout analysis
-- the dataset augmented
+- A sample of questions taken from the full datasets,
+- the OCR and Layout analysis (the output of running DocumentAnalyzer from layout_with_ocr.py)
+- the augmented dataset (so the union of the two previous steps, that is the sample of questions, enriched with the layout/OCR data)
   
 The "Corrupted" row contains corrupted questions.<br />
 The "Verified" row contain the corrupted question verified by the Judge model.

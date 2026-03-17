@@ -10,7 +10,7 @@
   "dataset": {
     "type": "MPDocVQA",
     "split": "train",
-    "dataset_json_path": "./data/qas/MPDocVQA_reduced.json"
+    "dataset_json_path": "./data_sample/qas"
   },
   "corruption": {
     "percentage": 100,
