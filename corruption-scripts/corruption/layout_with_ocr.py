@@ -22,8 +22,6 @@ from transformers import (
 import io
 from tqdm.auto import tqdm
 
-logging.basicConfig(level=logging.INFO)
-
 # Store the original torch.load function
 original_torch_load = torch.load
 
@@ -36,16 +34,68 @@ class DocumentAnalyzer:
         2) GOT-OCR2_0 (Extracts text)
         3) Qwen2-VL-2B-Instruct (Used to describe tables, figures, charts)
         """
-        if model_config is None:
+        self.model_config = model_config or {
             # Default configuration if none provided
-            model_config = {
-                "model_name": "Qwen/Qwen2-VL-2B-Instruct",
-                "min_pixels": 256 * 28 * 28,
-                "max_pixels": 720 * 28 * 28,
-            }
-
+            "model_name": "Qwen/Qwen2-VL-2B-Instruct",
+            "min_pixels": 256 * 28 * 28,
+            "max_pixels": 720 * 28 * 28,
+        }
         self.patch_saving_dir = patch_saving_dir
         self.layout_saving_dir = layout_saving_dir
+        self.device, self.device_type = self._detect_device()
+
+        self.model = None    # DocLayout-YOLO
+        self.ocr_model = None    # GOT-OCR2_0
+        self.qwen_model = None    # Qwen2-VL-2B-Instruct
+        self.tokenizer = None
+        self.processor = None
+
+        # # Define color palette for visualization
+        # self.class_colors = [
+        #     sv.Color(255, 0, 0),  # Red
+        #     sv.Color(0, 255, 0),  # Green
+        #     sv.Color(0, 0, 255),  # Blue
+        #     sv.Color(255, 255, 0),  # Yellow
+        #     sv.Color(255, 0, 255),  # Magenta
+        #     sv.Color(0, 255, 255),  # Cyan
+        #     sv.Color(128, 0, 128),  # Purple
+        #     sv.Color(128, 128, 0),  # Olive
+        #     sv.Color(128, 128, 128),  # Gray
+        #     sv.Color(0, 128, 128),  # Teal
+        #     sv.Color(128, 0, 0),  # Maroon
+        # ]
+
+        # Define class names mapping
+        self.class_names = {
+            0: "title",
+            1: "plain text",
+            2: "abandon",
+            3: "figure",
+            4: "figure_caption",
+            5: "table",
+            6: "table_caption",
+            7: "table_footnote",
+            8: "isolate_formula",
+            9: "formula_caption",
+        }
+
+    # ----------- Model Loading -----------
+    def load_models(self):
+        """Load all models."""
+        self._load_layout_model()
+        self._load_ocr_model()
+        self._load_qwen_model()
+
+    def _detect_device(self):
+        """ Dynamically determine the best available hardware """
+        if torch.cuda.is_available():
+            return torch.device("cuda"), "cuda"
+        # elif torch.backends.mps.is_available():
+        #     return torch.device("mps"), "mps"
+        return torch.device("cpu"), "cpu"
+
+    def _load_layout_model(self):
+        """Load DocLayout-YOLO for element detection."""
         filepath = hf_hub_download(
             repo_id="juliozhao/DocLayout-YOLO-DocStructBench",
             filename="doclayout_yolo_docstructbench_imgsz1024.pt",
@@ -63,32 +113,8 @@ class DocumentAnalyzer:
         # Restore original torch.load
         torch.load = original_torch_load
 
-        # Define color palette for visualization
-        self.class_colors = [
-            sv.Color(255, 0, 0),  # Red
-            sv.Color(0, 255, 0),  # Green
-            sv.Color(0, 0, 255),  # Blue
-            sv.Color(255, 255, 0),  # Yellow
-            sv.Color(255, 0, 255),  # Magenta
-            sv.Color(0, 255, 255),  # Cyan
-            sv.Color(128, 0, 128),  # Purple
-            sv.Color(128, 128, 0),  # Olive
-            sv.Color(128, 128, 128),  # Gray
-            sv.Color(0, 128, 128),  # Teal
-            sv.Color(128, 0, 0),  # Maroon
-        ]
-
-        # Dynamically determine the best available hardware
-        if torch.cuda.is_available():
-            self.device_type = "cuda"
-            self.device = torch.device("cuda")
-        # elif torch.backends.mps.is_available():
-        #     self.device_type = "mps"
-        #     self.device = torch.device("mps")
-        else:
-            self.device_type = "cpu"
-            self.device = torch.device("cpu")
-
+    def _load_ocr_model(self):
+        """Load GOT-OCR2_0 for text extraction."""
         # Initialize OCR model for CUDA
         self.tokenizer = AutoTokenizer.from_pretrained(
             "ucaslcl/GOT-OCR2_0", trust_remote_code=True
@@ -102,39 +128,27 @@ class DocumentAnalyzer:
         )
         self.ocr_model = self.ocr_model.eval().to(self.device)
 
-        # Define class names mapping
-        self.class_names = {
-            0: "title",
-            1: "plain text",
-            2: "abandon",
-            3: "figure",
-            4: "figure_caption",
-            5: "table",
-            6: "table_caption",
-            7: "table_footnote",
-            8: "isolate_formula",
-            9: "formula_caption",
-        }
-
+    def _load_qwen_model(self):
+        """Load Qwen2-VL-2B-Instruct for table/figure description."""
         # Initialize Qwen2-VL model with config parameters
         # Force float16 for Mac MPS compatibility, otherwise use auto
         model_dtype = torch.float16 if self.device_type == "mps" else "auto"
         # self.qwen_model = AutoModelForVision2Seq.from_pretrained(
-        #     model_config["model_name"], 
+        #     self.model_config["model_name"], 
         #     torch_dtype=model_dtype, 
         #     device_map="auto"
         # )
         # Note: We removed device_map="auto" to prevent the fatal disk-offloading crash
         self.qwen_model = AutoModelForImageTextToText.from_pretrained(
-            model_config["model_name"], 
+            self.model_config["model_name"], 
             torch_dtype=model_dtype
         ).to(self.device)
 
         # Set processor with specific pixel limits from config
-        min_pixels = model_config.get("min_pixels", 256 * 28 * 28)
-        max_pixels = model_config.get("max_pixels", 720 * 28 * 28)
+        min_pixels = self.model_config.get("min_pixels", 256 * 28 * 28)
+        max_pixels = self.model_config.get("max_pixels", 720 * 28 * 28)
         self.processor = AutoProcessor.from_pretrained(
-            model_config["model_name"], min_pixels=min_pixels, max_pixels=max_pixels
+            self.model_config["model_name"], min_pixels=min_pixels, max_pixels=max_pixels
         )
 
     # ----------- Filtering Methods -----------
@@ -186,8 +200,7 @@ class DocumentAnalyzer:
         det_res[0].boxes = det_res[0].boxes[keep_mask]
         return det_res
 
-    # ------------------------------------------
-
+    # ----------- Visual Content Analysis -----------
     def analyze_visual_content(self, image_path, content_type="image", prompt=None):
         if prompt is None:
             prompt = f"Describe this {content_type} in detail."
@@ -240,22 +253,76 @@ class DocumentAnalyzer:
             logging.error(f"Error in analyze_visual_content: {str(e)}")
             return f"Error analyzing {content_type}: {str(e)}"
 
+    def _extract_text(self, patch_path, class_name):
+        """Extract text from a patch using the appropriate model.
+        - Tables/figures → Qwen2-VL (visual analysis), with GOT-OCR fallback
+        - Everything else → GOT-OCR directly
+        """
+
+        # Enhanced error handling for visual content analysis
+        if class_name in ["table", "figure"]:
+            prompt = self._get_visual_prompt(class_name)
+            try:
+                result = self.analyze_visual_content(
+                    patch_path,
+                    content_type=class_name,
+                    prompt=prompt,
+                )
+
+                if not result.startswith("Error"):
+                    return result
+                logging.warning(f"Visual analysis failed for {class_name}, falling back to OCR")
+            except Exception as e:
+                logging.error(f"Error in visual analysis for {class_name}: {e}")
+        
+        # Fallback or default: GOT-OCR
+        return self._run_ocr(patch_path)
+
+    def _get_visual_prompt(self, class_name):
+        """Return the appropriate prompt for visual content analysis."""
+        prompts = {
+            "table": (
+                "Analyze this table and provide a clear description of its content, "
+                "including: 1) what information it contains, 2) how many rows and columns, "
+                "3) key data points or trends. Be specific but concise."
+            ),
+            "figure": (
+                "Describe this image in detail, including: 1) what it shows, "
+                "2) key visual elements, 3) any text or numbers visible, "
+                "4) the overall context or purpose. Be specific but concise."
+            ),
+        }
+        return prompts.get(class_name)
+
+    def _run_ocr(self, patch_path):
+        """Run GOT-OCR on a patch image."""
+        with self._autocast_context():
+            with torch.no_grad():
+                return self.ocr_model.chat(self.tokenizer, patch_path, ocr_type="ocr")
+    
+    def _autocast_context(self):
+        """Return the appropriate autocast context for the current device."""
+        import contextlib
+        # Use autocast for the specific hardware, or null context for CPU
+        if self.device_type in ["cuda", "mps"]:
+            return torch.autocast(device_type=self.device_type)
+        return contextlib.nullcontext()
+
+    def _clear_cache(self):
+        """Clear GPU cache if applicable."""
+        if self.device_type == "cuda":
+            torch.cuda.empty_cache()
+        elif self.device_type == "mps":
+            torch.mps.empty_cache()
+
     def crop_and_ocr(self, image_path, boxes, classes):
         """
         Step 3) For each detected document: crop the region, save the path to disk
                 + process tables and figures with analyze_visual_content (Qwen) and other elements with GOT-OCR 2.0
         Step 4) Save JSON with all the results
         """
-        import contextlib
-        # Use autocast for the specific hardware, or null context for CPU
-        if self.device_type in ["cuda", "mps"]:
-            autocast_context = torch.autocast(device_type=self.device_type)
-        else:
-            autocast_context = contextlib.nullcontext()
-        
         # Load the full image
         image = Image.open(image_path)
-
         results = {}
         os.makedirs(self.patch_saving_dir, exist_ok=True)
 
@@ -268,63 +335,14 @@ class DocumentAnalyzer:
                 class_id = cls.item()
                 class_name = self.class_names.get(class_id, "unknown")
 
+                # Crop and save patch
                 cropped = image.crop((x1, y1, x2, y2))
-
                 patch_filename = f"{page_id}_obj{idx}.jpg"
                 patch_path = os.path.join(self.patch_saving_dir, patch_filename)
                 cropped.save(patch_path)
 
-                # Determine the prompt based on class_name
-                if class_name == "table":
-                    prompt = (
-                        "Analyze this table and provide a clear description of its content, "
-                        "including: 1) what information it contains, 2) how many rows and columns, "
-                        "3) key data points or trends. Be specific but concise."
-                    )
-                elif class_name == "figure":
-                    prompt = (
-                        "Describe this image in detail, including: 1) what it shows, "
-                        "2) key visual elements, 3) any text or numbers visible, "
-                        "4) the overall context or purpose. Be specific but concise."
-                    )
-                else:
-                    prompt = None
-
-                # Enhanced error handling for visual content analysis
-                if class_name in ["table", "figure"]:
-                    try:
-                        ocr_result = self.analyze_visual_content(
-                            patch_path,
-                            content_type=class_name,
-                            prompt=prompt,
-                        )
-                        if ocr_result.startswith("Error"):
-                            logging.warning(
-                                f"Visual analysis failed for {class_name} {idx}: {ocr_result}"
-                            )
-                            # Fallback to OCR for failed visual analysis
-                            with autocast_context:
-                                with torch.no_grad():
-                                    ocr_result = self.ocr_model.chat(
-                                        self.tokenizer, patch_path, ocr_type="ocr"
-                                    )
-                    except Exception as e:
-                        logging.error(
-                            f"Error in visual analysis for {class_name} {idx}: {str(e)}"
-                        )
-                        # Fallback to OCR
-                        with autocast_context:
-                            with torch.no_grad():
-                                ocr_result = self.ocr_model.chat(
-                                    self.tokenizer, patch_path, ocr_type="ocr"
-                                )
-                else:
-                    # For other classes, use OCR model
-                    with autocast_context:
-                        with torch.no_grad():
-                            ocr_result = self.ocr_model.chat(
-                                self.tokenizer, patch_path, ocr_type="ocr"
-                            )
+                # Extract text using the appropriate model
+                ocr_result = self._extract_text(patch_path, class_name, prompt)
 
                 results[f"object{idx}"] = {
                     "BBOX": [x1, y1, x2, y2],
@@ -341,11 +359,8 @@ class DocumentAnalyzer:
 
             # Clear CUDA cache periodically
             if idx % 10 == 0:
-                if self.device_type == "cuda":
-                    torch.cuda.empty_cache()
-                elif self.device_type == "mps":
-                    torch.mps.empty_cache()
-
+                self._clear_cache()
+        # Save results
         os.makedirs(self.layout_saving_dir, exist_ok=True)
         json_path = f"{self.layout_saving_dir}/{page_id}.json"
         with open(json_path, "w", encoding="utf-8") as f:
@@ -362,21 +377,21 @@ class DocumentAnalyzer:
         """
         results = {"pages": {}}
 
-        try:
-            # Extract page information
-            documents = question_data.get("document", [])
-            if not isinstance(documents, list):
-                documents = [documents]
+        # Extract page information
+        documents = question_data.get("document", [])
+        if not isinstance(documents, list):
+            documents = [documents]
 
-            for document in documents:
+        for document in documents:
+            try:
                 if not document or not os.path.exists(document):
                     logging.warning(f"Document path not found: {document}")
                     continue
 
                 # Check if document has been already analyzed
-                doc_name = document.split("/")[-1]
-                json_path = f"{self.layout_saving_dir}/{doc_name.split('.')[0]}.json"
-
+                doc_path = Path(document)
+                doc_name = doc_path.name # "sslg0227_p0.jpg"
+                json_path = Path(self.layout_saving_dir) / f"{doc_path.stem}.json" 
                 if os.path.exists(json_path):
                     # Load existing analysis
                     try:
@@ -416,34 +431,31 @@ class DocumentAnalyzer:
                     }
 
                 # Clear cache after each page based on device
-                if self.device_type == "cuda":
-                    torch.cuda.empty_cache()
-                elif self.device_type == "mps":
-                    torch.mps.empty_cache()
+                self._clear_cache()
 
-        except Exception as e:
-            logging.error(f"Error in analyze_pages_for_question: {str(e)}")
-            logging.error(f"Question data: {question_data}")
+            except Exception as e:
+                logging.error(f"Error in analyze_pages_for_question: {str(e)}")
+                logging.error(f"Question data: {question_data}")
 
         return results
 
-    def process_dataset_questions(self, df, output_file):
+    def process_dataset_questions(self, df, augmented_dataset_path):
         """
         Process dataset questions and save results incrementally.
 
         Args:
             df: Input dataframe with questions
-            output_file: Path to save the results
+            augmented_dataset_path: Path to save the results
         """
         # Load existing results if file exists
         processed_data = {}
-        if os.path.exists(output_file):
+        if os.path.exists(augmented_dataset_path):
             try:
-                with open(output_file, "r", encoding="utf-8") as f:
+                with open(augmented_dataset_path, "r", encoding="utf-8") as f:
                     processed_data = json.load(f)
             except json.JSONDecodeError:
                 logging.warning(
-                    f"Could not load existing results from {output_file}. Starting fresh."
+                    f"Could not load existing results from {augmented_dataset_path}. Starting fresh."
                 )
 
         results = []
@@ -476,10 +488,10 @@ class DocumentAnalyzer:
 
             # Save incrementally
             try:
-                with open(output_file, "w", encoding="utf-8") as f:
+                with open(augmented_dataset_path, "w", encoding="utf-8") as f:
                     json.dump(processed_data, f, indent=4, ensure_ascii=False)
             except Exception as e:
-                logging.error(f"Error saving results to {output_file}: {str(e)}")
+                logging.error(f"Error saving results to {augmented_dataset_path}: {str(e)}")
 
         # Add layout analysis results to the dataframe
         df["layout_analysis"] = results

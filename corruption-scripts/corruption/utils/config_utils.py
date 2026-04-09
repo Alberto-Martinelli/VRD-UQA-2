@@ -83,4 +83,4 @@ def extract_config(config):
 def print_parameters(params):
     print("\nUsing the following parameters:")
     for k, v in params.items():
-        print(f"{k.replace('_', ' ').capitalize()}: {v}")
+        print(f"\t>{k.replace('_', ' ').capitalize()}: {v}")

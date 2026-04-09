@@ -1,6 +1,13 @@
+import warnings
+import os
+
+# Suppress noisy third-party warnings before importing libraries
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import json
 import pandas as pd
-import os
 import logging
 from tqdm import tqdm
 import nltk
@@ -19,61 +26,44 @@ from layout_with_ocr import DocumentAnalyzer
 from utils.config_utils import load_config, extract_config, print_parameters
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
+# Silence noisy third-party loggers
+for logger_name in ["httpx", "httpcore", "gliner", "transformers", "sentence_transformers", "sentencepiece"]:
+    logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 
 def get_env_bool(key, default=False):
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
 
-def main(config_path=None):
-    print("Starting the question corruption and verification process...")
 
-    # Load configuration
-    config = load_config(config_path)
-    params = extract_config(config)
-    print_parameters(params)
-
-    # Load data
-    print("\n")
-    print(
-        "----------------------------------- Loading data -----------------------------------"
-    )
-    print("\n")
-
-    raw_dataset_dict = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
-    questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"])
-    print(f"Total questions loaded: {len(questions_df)}")
-
-    def verify_images(questions_df):
-        # Check that all page_ids mentioned in the dataset have corresponding image files
-        print("\nVerifying image file existence...")
-        all_images_exist = True
-        for idx, row in questions_df.iterrows():
-            image_paths = row["image_path"]
-            # Handle case where image_path is a list
-            if isinstance(image_paths, list):
-                for image_path in image_paths:
-                    if not os.path.exists(image_path):
-                        print(f"Warning: Image file not found at path: {image_path}")
-                        all_images_exist = False
-            # Handle case where image_path is a single string
-            else:
-                if not os.path.exists(image_paths):
-                    print(f"Warning: Image file not found at path: {image_paths}")
+def verify_all_images_present(questions_df):
+    # Check that all page_ids mentioned in the dataset have corresponding image files
+    print("\nVerifying image file existence...")
+    all_images_exist = True
+    for idx, row in questions_df.iterrows():
+        image_paths = row["image_path"]
+        # Handle case where image_path is a list
+        if isinstance(image_paths, list):
+            for image_path in image_paths:
+                if not os.path.exists(image_path):
+                    print(f"Warning: Image file not found at path: {image_path}")
                     all_images_exist = False
-
-        if all_images_exist:
-            print("\nAll images are present!\n")
+        # Handle case where image_path is a single string
         else:
-            print("\nSome images are missing!\n")
-        return all_images_exist
+            if not os.path.exists(image_paths):
+                print(f"Warning: Image file not found at path: {image_paths}")
+                all_images_exist = False
 
-    verify_images(questions_df)
+    if all_images_exist:
+        print("\nAll images are present!\n")
+    else:
+        print("\nSome images are missing!\n")
+    return all_images_exist
+
+def sample_questions_to_corrupt(questions_df, percentage):
     # Calculate the number of questions to corrupt
-    num_questions_to_corrupt = int(len(questions_df) * params["percentage"] / 100)
+    num_questions_to_corrupt = int(len(questions_df) * percentage / 100)
     # Ensure we don't try to sample more questions than available
     num_questions_to_corrupt = min(num_questions_to_corrupt, len(questions_df))
 
@@ -85,15 +75,22 @@ def main(config_path=None):
         f"Number of questions selected for corruption: {len(df_to_corrupt)}/{len(questions_df)}"
     )
 
-    df_to_corrupt.to_csv("df_to_corrupt.csv")
+    return df_to_corrupt
 
-    # Entity identification
-    print("\n")
-    print(
-        "----------------------------------- Identifying entities -----------------------------------"
-    )
-    print("\n")
+# pipeline
 
+def load_data(params):
+    raw_dataset_dict = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
+    questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"])
+    print(f"Total questions loaded: {len(questions_df)}")
+
+    verify_all_images_present(questions_df)
+
+    df_to_corrupt = sample_questions_to_corrupt(questions_df, params["percentage"])
+    # df_to_corrupt.to_csv("df_to_corrupt.csv")
+    return df_to_corrupt
+
+def identify_all_entities(params, df_to_corrupt):
     print("Setting up Entity Identifier...")
     entity_identifier = EntityIdentifier(
         dataset_name=params["dataset_name"],
@@ -105,28 +102,16 @@ def main(config_path=None):
         document=params["document"], # looks for document structural elements (Table 2, Section 3.1, page 4 etc.)
     )
 
-    print("Identifying entities for each question...")
+    print("\nIdentifying entities for each question...")
 
     questions_list = df_to_corrupt["question"].tolist()
     question_with_entities = []
     for question in questions_list:
         entities = entity_identifier.identify_entities(question)
         question_with_entities.append(entities)
+    return questions_list, question_with_entities, entity_identifier
 
-    print(f"Questions with identified entities: {sum(1 for entities in question_with_entities if entities)}")
-
-    print("\nExample of question with identified entities:")
-    for i, (question, entities) in enumerate(zip(questions_list[:3], question_with_entities[:3])):
-        print(f"\nQuestion {i+1}: {question}")
-        print(f"Entities: {entities}")
-
-    # Process layout analysis
-    print("\n")
-    print(
-        "----------------------------------- Analyzing document layout -----------------------------------"
-    )
-    print("\n")
-
+def create_augmented_dataset(params, df_to_corrupt):
     if not os.path.exists(params["augmented_dataset_path"]):
         # Model configuration
         model_config = {
@@ -137,15 +122,62 @@ def main(config_path=None):
 
         # Initialize DocumentAnalyzer with config
         document_analyzer = DocumentAnalyzer(model_config, params["patch_saving_dir"], params["layout_saving_dir"])
-
+        print("Loading layout analysis models...")
+        document_analyzer.load_models()
+        print("Models loaded successfully.")
+        
         # Process the dataframe to add layout analysis
         df_to_corrupt = document_analyzer.process_dataset_questions(
             df_to_corrupt, params["augmented_dataset_path"]
         )
+    else:
+        print("Augmented dataset already exists. Skipping layout analysis.")
+    return df_to_corrupt
+
+def main(config_path=None):
+    print("\nStarting the question corruption and verification process...")
+
+    # Load configuration
+    config = load_config(config_path)
+    params = extract_config(config)
+    print_parameters(params)
+
+    # Load data
+    print("\n")
+    print(
+        "----------------------------------- 1. Loading data -----------------------------------"
+    )
+    print("\n")
+
+    df_to_corrupt = load_data(params)
 
     print("\n")
     print(
-        "---------------------------------------------- In-context corruption ----------------------------------------------"
+        "----------------------------------- 2. Identifying entities -----------------------------------"
+    )
+    print("\n")
+
+    questions_list, question_with_entities, entity_identifier = identify_all_entities(params, df_to_corrupt)
+
+    print(f"\nQuestions with identified entities: {sum(1 for entities in question_with_entities if entities)}")
+
+    print("\nExample of question with identified entities:")
+    for i, (question, entities) in enumerate(zip(questions_list[:3], question_with_entities[:3])):
+        print(f"\nQuestion {i+1}: {question}")
+        print(f"Entities: {entities}")
+
+    # Process layout analysis
+    print("\n")
+    print(
+        "----------------------------------- 3. Analyzing document layout -----------------------------------"
+    )
+    print("\n")
+
+    df_to_corrupt = create_augmented_dataset(params, df_to_corrupt)
+
+    print("\n")
+    print(
+        "----------------------------------- 4. In-context corruption -----------------------------------"
     )
     print("\n")
 

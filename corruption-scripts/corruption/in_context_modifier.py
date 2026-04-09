@@ -361,33 +361,33 @@ class InContextModifier:
                 current_corrupted_question = cq["corruption"]["corrupted_question"]
 
                 prompt = f"""You are given two questions. The first one is the original one, the second one is the corrupted one.
-The corruption is done based on entities extracted from the original question.
+                            The corruption is done based on entities extracted from the original question.
 
-Original question: "{original_question}"
-Corrupted question: "{current_corrupted_question}"
+                            Original question: "{original_question}"
+                            Corrupted question: "{current_corrupted_question}"
 
-You have to help me rewrite the corrupted question to make it meaningful while:
-1. Making it coherent and natural, while strictly keeping the exact same meaning
-2. Ensuring it makes sense in the context of the original question
-3. Never changing the corrupted entities: {list(all_corrupted_entities)}
-4. Editing the question minimally - only what's needed to make it coherent
-5. Guaranteeing that the final output is meaningful
+                            You have to help me rewrite the corrupted question to make it meaningful while:
+                            1. Making it coherent and natural, while strictly keeping the exact same meaning
+                            2. Ensuring it makes sense in the context of the original question
+                            3. Never changing the corrupted entities: {list(all_corrupted_entities)}
+                            4. Editing the question minimally - only what's needed to make it coherent
+                            5. Guaranteeing that the final output is meaningful
 
-Original: "What is the highest temperature recorded?"
-Bad corruption: "What is the 85°F temperature recorded?"
-Correct rewrite: "Was 85°F the highest temperature recorded?"
+                            Original: "What is the highest temperature recorded?"
+                            Bad corruption: "What is the 85°F temperature recorded?"
+                            Correct rewrite: "Was 85°F the highest temperature recorded?"
 
-Good Examples:
-Original: "Which year is mentioned first in the x axis?"
-Bad corruption: "Which 1975 is mentioned first in the x axis?"
-Good rewrite: "Is 1975 the first year mentioned in the x axis?"
+                            Good Examples:
+                            Original: "Which year is mentioned first in the x axis?"
+                            Bad corruption: "Which 1975 is mentioned first in the x axis?"
+                            Good rewrite: "Is 1975 the first year mentioned in the x axis?"
 
-Original: "Which company had the most sales in 2022?"
-Bad corruption: "Which Microsoft had the most sales in 2022?"
-Correct rewrite: "Did Microsoft have the most sales in 2022?"
+                            Original: "Which company had the most sales in 2022?"
+                            Bad corruption: "Which Microsoft had the most sales in 2022?"
+                            Correct rewrite: "Did Microsoft have the most sales in 2022?"
 
-Important: The following corrupted entities must be preserved in the rewritten question: {list(all_corrupted_entities)}
-Important: Return only the rewritten question, without any explanation or introductions."""
+                            Important: The following corrupted entities must be preserved in the rewritten question: {list(all_corrupted_entities)}
+                            Important: Return only the rewritten question, without any explanation or introductions."""
 
                 final_rewritten_question = cls.generate_text(prompt).strip()
                 cq["corruption"]["corrupted_question"] = final_rewritten_question
