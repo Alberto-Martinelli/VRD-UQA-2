@@ -342,7 +342,7 @@ class DocumentAnalyzer:
                 cropped.save(patch_path)
 
                 # Extract text using the appropriate model
-                ocr_result = self._extract_text(patch_path, class_name, prompt)
+                ocr_result = self._extract_text(patch_path, class_name)
 
                 results[f"object{idx}"] = {
                     "BBOX": [x1, y1, x2, y2],
