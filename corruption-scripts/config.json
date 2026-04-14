@@ -1,16 +1,16 @@
 {
   "paths": {
     "base_path": "",
-    "augmented_dataset": "./corruption-scripts/results/DUDE_augmented.json",
-    "output_corrupted": "./corruption-scripts/results/DUDE_unanswerable_corrupted_questions.json",
-    "output_corrupted_cleaned": "./corruption-scripts/results/DUDE_unanswerable_corrupted_questions_cleaned.json",
-    "patch_saving_dir": "./corruption-scripts/results/DUDE/patches",
-    "layout_saving_dir": "./corruption-scripts/results/DUDE/layout"
+    "augmented_dataset": "./corruption-scripts/results/MPDocVQA_augmented.json",
+    "output_corrupted": "./corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions.json",
+    "output_corrupted_cleaned": "./corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_cleaned.json",
+    "patch_saving_dir": "./corruption-scripts/results/MPDocVQA/patches",
+    "layout_saving_dir": "./corruption-scripts/results/MPDocVQA/layout"
   },
   "dataset": {
-    "name": "DUDE",
+    "name": "MPDocVQA",
     "split": "train",
-    "dataset_json_path": "./data/DUDE/DUDE_sample/qas"
+    "dataset_json_path": "./data_sample/qas"
   },
   "corruption": {
     "percentage": 100,
