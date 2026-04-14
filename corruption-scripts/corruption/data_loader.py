@@ -2,21 +2,14 @@ from datasets import load_from_disk
 import pandas as pd
 import os
 import json
+from pathlib import Path
 
 
 class DataLoader:
     @staticmethod
     def load_dataset(base_path: str, split_type: str, dataset_name: str, dataset_json_path: str = None) -> dict:
         if dataset_name == "DUDE":
-            path = (
-                dataset_json_path
-                if dataset_json_path
-                else os.path.join(
-                    base_path,
-                    "data/DUDE_train-val-test_binaries",
-                    "2023-03-23_DUDE_gt_test_PUBLIC.json",
-                )
-            )
+            path = Path(base_path) / dataset_json_path / f"{split_type}.json"
             try:
                 with open(path, "r") as file:
                     return json.load(file)
@@ -25,7 +18,7 @@ class DataLoader:
                     f"Dataset not found at {path}. Please check the path and ensure the dataset is in the correct format."
                 )
         elif dataset_name == "MPDocVQA":
-            path = os.path.join(base_path, dataset_json_path, f"{split_type}.json")
+            path = Path(base_path) / dataset_json_path / f"{split_type}.json"
             with open(path, "r") as file:
                 return json.load(file)
         else:
@@ -53,9 +46,13 @@ class DataLoader:
 
             # Filter out questions with empty bounding boxes, empty answers, and train split
             def check_bounding_boxes(x):
-                if isinstance(x, float):  # Handle NaN values
+                # Handle NaN or non-dictionary values
+                if not isinstance(x, dict):
                     return False
-                return bool(x) and len(x) > 0 and len(x[0]) > 0
+                
+                # Check if 'left' exists and has at least one coordinate
+                # Use any key: "left", "top", "width", "height", or "page"
+                return "left" in x and len(x["left"]) > 0
 
             def check_answers(x):
                 if isinstance(x, float):  # Handle NaN values
@@ -68,14 +65,16 @@ class DataLoader:
                 & (df["answers"].apply(check_answers))
             ]
 
+            # Derive image_dir dynamically from the first document path
+            sample_doc = df.iloc[0]["document"]
+            base_extracted_path = sample_doc.rsplit("PDF", 1)[0]
+            dude_images_dir = os.path.join(base_extracted_path, "DUDE_train-val-test_binaries", "images", "train")
+
             # Get document pages using directory scanning
             def get_document_pages(doc_id):
-                image_dir = os.path.join(
-                    base_path, "data", "DUDE_train-val-test_binaries", "images", "train"
-                )
                 pages = []
-                if os.path.exists(image_dir):
-                    for filename in sorted(os.listdir(image_dir)):
+                if os.path.exists(dude_images_dir):
+                    for filename in sorted(os.listdir(dude_images_dir)):
                         if filename.startswith(f"{doc_id}_") and filename.endswith(
                             ".jpg"
                         ):
@@ -89,19 +88,12 @@ class DataLoader:
             df["page_ids"] = df["docId"].apply(get_document_pages)
             df["document"] = df["page_ids"].apply(
                 lambda x: [
-                    os.path.join(
-                        base_path,
-                        "data",
-                        "DUDE_train-val-test_binaries",
-                        "images",
-                        "train",
-                        f"{pid}.jpg",
-                    )
+                    os.path.join(dude_images_dir, f"{pid}.jpg")
                     for pid in x
                 ]
             )
             df["answer_page_idx"] = df["answers_page_bounding_boxes"].apply(
-                lambda x: x[0][0]["page"] if x and len(x) > 0 else 0
+                lambda x: x.get("page", [0])[0] if isinstance(x, dict) and x.get("page") else 0
             )
             df["answers_page_idx"] = df["answer_page_idx"]
             df["questionId"] = df["questionId"].astype(str)

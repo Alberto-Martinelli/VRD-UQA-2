@@ -44,7 +44,7 @@ The "Verified" row contain the corrupted question verified by the Judge model.
 
 In future, we will release the full datasets processed.
 
-We also provide the zip files of with all datasets at this links: [MPDocVQA.zip](https://drive.google.com/file/d/1Qn4zG_nCnx0sebhTBHKHpFH41-OEsex2/view?usp=drive_link), [DUDE.zip](https://drive.google.com/file/d/1JNIB-a1vvXjWDaDedX8JsdioOVAs1_03/view?usp=drive_link)
+We also provide the zip files of with all datasets (equivalent of what you can find in the google drive) at this links: [MPDocVQA.zip](https://drive.google.com/file/d/1Qn4zG_nCnx0sebhTBHKHpFH41-OEsex2/view?usp=drive_link), [DUDE.zip](https://drive.google.com/file/d/1JNIB-a1vvXjWDaDedX8JsdioOVAs1_03/view?usp=drive_link)
 
 
 ## Models
