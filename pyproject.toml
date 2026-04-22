@@ -22,7 +22,7 @@ dependencies = [
     "torch<2.6",
     "torchvision<0.21",
     "tqdm>=4.67.3",
-    "transformers<5.0.0",
+    "transformers>=4.40.0,<4.45.0",
     "verovio>=6.0.1",
 ]
 
@@ -32,5 +32,9 @@ url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-gpu" }
-torchvision = { index = "pytorch-gpu" }
+torch = [
+    { index = "pytorch-gpu", marker = "sys_platform != 'darwin'" }
+]
+torchvision = [
+    { index = "pytorch-gpu", marker = "sys_platform != 'darwin'" }
+]
