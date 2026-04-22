@@ -23,6 +23,13 @@ logging.basicConfig(
 for logger_name in ["httpx", "httpcore", "gliner", "transformers", "sentence_transformers", "sentencepiece"]:
     logging.getLogger(logger_name).setLevel(logging.ERROR)
 
+from transformers.cache_utils import DynamicCache
+if not hasattr(DynamicCache, "seen_tokens"):
+    @property
+    def seen_tokens(self):
+        return self.get_seq_length()
+    DynamicCache.seen_tokens = seen_tokens
+
 def get_env_bool(key, default=False):
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
 
