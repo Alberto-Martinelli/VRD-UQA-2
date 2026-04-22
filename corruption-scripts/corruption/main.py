@@ -30,6 +30,11 @@ if not hasattr(DynamicCache, "seen_tokens"):
         return self.get_seq_length()
     DynamicCache.seen_tokens = seen_tokens
 
+if not hasattr(DynamicCache, "get_max_length"):
+    def get_max_length(self):
+        return getattr(self, "_max_cache_len", None) or getattr(self, "max_cache_len", 4096)
+    DynamicCache.get_max_length = get_max_length
+
 def get_env_bool(key, default=False):
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
 
