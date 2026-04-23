@@ -103,7 +103,7 @@ class DataLoader:
             
             df["document"] = df["page_ids"].apply(
                 lambda x: [
-                    os.path.join(dude_images_dir, f"{pid}.jpg")
+                    os.path.join(dude_images_dir, pid)
                     for pid in x
                 ]
             )
