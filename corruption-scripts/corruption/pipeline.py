@@ -8,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 from model_loader import ModelLoader
 from in_context_modifier import InContextModifier
+import logging
 
 # ------------ Helpers ------------
 def sample_questions_to_corrupt(questions_df, percentage):
@@ -20,7 +21,7 @@ def sample_questions_to_corrupt(questions_df, percentage):
     df_to_corrupt = questions_df.sample(n=num_questions_to_corrupt)
 
     # Print information about the sampled data
-    print(
+    logging.info(
         f"Number of questions selected for corruption: {len(df_to_corrupt)}/{len(questions_df)}"
     )
 
@@ -28,7 +29,7 @@ def sample_questions_to_corrupt(questions_df, percentage):
 
 def verify_all_images_present(questions_df):
     # Check that all page_ids mentioned in the dataset have corresponding image files
-    print("\nVerifying image file existence...")
+    logging.info("Verifying image file existence...")
     all_images_exist = True
     for idx, row in questions_df.iterrows():
         image_paths = row["image_path"]
@@ -36,18 +37,18 @@ def verify_all_images_present(questions_df):
         if isinstance(image_paths, list):
             for image_path in image_paths:
                 if not os.path.exists(image_path):
-                    print(f"Warning: Image file not found at path: {image_path}")
+                    logging.warning(f"Image file not found at path: {image_path}")
                     all_images_exist = False
         # Handle case where image_path is a single string
         else:
             if not os.path.exists(image_paths):
-                print(f"Warning: Image file not found at path: {image_paths}")
+                logging.warning(f"Image file not found at path: {image_paths}")
                 all_images_exist = False
 
     if all_images_exist:
-        print("\nAll images are present!\n")
+        logging.info("All images are present!")
     else:
-        print("\nSome images are missing!\n")
+        logging.warning("Some images are missing!")
     return all_images_exist
 
 # HELPERS FOR CORRUPTION STEP
@@ -248,19 +249,19 @@ def extract_corruption_fields(x):
     }
 
 # ------------ Pipeline Steps ------------
-# STEP 1
+# STEP 1 (data_loader.py)
 def load_data(params):
     raw_dataset_dict = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
     questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"])
-    print(f"Total questions loaded: {len(questions_df)}")
+    logging.info(f"Total questions loaded: {len(questions_df)}")
 
     df_to_corrupt = sample_questions_to_corrupt(questions_df, params["percentage"])
     # df_to_corrupt.to_csv("df_to_corrupt.csv")
     return df_to_corrupt
 
-# STEP 2
+# STEP 2 (entity_identifier.py)
 def identify_all_entities(params, df_to_corrupt):
-    print("Setting up Entity Identifier...")
+    logging.info("Setting up Entity Identifier...")
     entity_identifier = EntityIdentifier(
         dataset_name=params["dataset_name"],
         # Five boolean flags from the config that act as filters for which categories of entities to detect
@@ -271,7 +272,7 @@ def identify_all_entities(params, df_to_corrupt):
         document=params["document"], # looks for document structural elements (Table 2, Section 3.1, page 4 etc.)
     )
 
-    print("\nIdentifying entities for each question...")
+    logging.info("Identifying entities for each question...")
 
     questions_list = df_to_corrupt["question"].tolist()
     question_with_entities = []
@@ -280,7 +281,7 @@ def identify_all_entities(params, df_to_corrupt):
         question_with_entities.append(entities)
     return questions_list, question_with_entities, entity_identifier
 
-# STEP 3
+# STEP 3 (layout_with_ocr.py)
 def create_augmented_dataset(params, df_to_corrupt):
     if not os.path.exists(params["augmented_dataset_path"]):
         # Model configuration
@@ -292,26 +293,26 @@ def create_augmented_dataset(params, df_to_corrupt):
 
         # Initialize DocumentAnalyzer with config
         document_analyzer = DocumentAnalyzer(model_config, params["patch_saving_dir"], params["layout_saving_dir"])
-        print("Loading layout analysis models...")
+        logging.info("Loading layout analysis models...")
         document_analyzer.load_models()
-        print("Models loaded successfully.")
+        logging.info("Models loaded successfully.")
         
         # Process the dataframe to add layout analysis
         df_to_corrupt = document_analyzer.process_dataset_questions(
             df_to_corrupt, params["augmented_dataset_path"]
         )
     else:
-        print("Augmented dataset already exists. Skipping layout analysis.")
+        logging.info("Augmented dataset already exists. Skipping layout analysis.")
     return df_to_corrupt
 
-# STEP 4 CORRUPTION
+# STEP 4 CORRUPTION (in_context_modifier.py)
 def corrupt_questions(params, entity_identifier):
     """Step 4: Load augmented dataset, corrupt questions, save results."""
 
     # --- 4a. Load augmented dataset and enrich with answer locations + entities ---
     with open(params["augmented_dataset_path"], "r", encoding="utf-8") as file:
         augmented_dataset = json.load(file)
-    print(f"Total number of questions in dataset: {len(augmented_dataset.keys())}")
+    logging.info(f"Total number of questions in augmented dataset: {len(augmented_dataset.keys())}")
 
     df_augmented = pd.DataFrame(augmented_dataset).T
     df_augmented["question"] = df_augmented["question_data"].apply(lambda x: x["question"])
@@ -389,7 +390,7 @@ def corrupt_questions(params, entity_identifier):
 
     # Remove corruptions that are identical to the original or have bad formatting
     removed = clean_corrupted_questions(params["output_corrupted"], params["output_corrupted_cleaned"])
-    print(f"Removed {removed['duplicates']} questions where corrupted matched original")
-    print(f"Removed {removed['invalid_format']} questions with invalid format")
-    print(f"Total questions processed: {len(df_augmented)}")
-    print(f"Number of corrupted questions: {df_results['is_corrupted'].sum()}")
+    logging.info(f"Removed {removed['duplicates']} questions where corrupted matched original")
+    logging.info(f"Removed {removed['invalid_format']} questions with invalid format")
+    logging.info(f"Total questions processed: {len(df_augmented)}")
+    logging.info(f"Number of corrupted questions generated safely: {df_results['is_corrupted'].sum()}")

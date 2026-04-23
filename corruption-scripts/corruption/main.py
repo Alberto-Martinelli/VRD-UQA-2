@@ -17,7 +17,7 @@ from utils.config_utils import load_config, extract_config, print_parameters
 from pipeline import load_data, identify_all_entities, create_augmented_dataset, corrupt_questions
 
 logging.basicConfig(
-    level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 # Silence noisy third-party loggers
 for logger_name in ["httpx", "httpcore", "gliner", "transformers", "sentence_transformers", "sentencepiece"]:

@@ -64,9 +64,9 @@ class InContextModifier:
             original_obj_id = answer_loc.get("object_typeID", "")
             original_bbox = answer_loc.get("bbox", [])
 
-            print(f"Found answer: {answer_text} on page: {answer_page_key}")
+            logging.debug(f"Found answer: {answer_text} on page: {answer_page_key}")
 
-        print(f"Processing entity: {entity_text} of type {entity_label}")
+        logging.debug(f"Processing entity: {entity_text} of type {entity_label}")
         corruptions = []
 
         if cls.in_document and original_answer_locations:
@@ -77,7 +77,7 @@ class InContextModifier:
             original_layout_type = answer_loc["object_type"]
             original_bbox = answer_loc["bbox"]
 
-            print(
+            logging.debug(
                 f"Found answer: {answer_text} on page: {answer_page_key} in layout type: {original_layout_type}"
             )
 
@@ -139,8 +139,8 @@ class InContextModifier:
         remaining_entities = candidate_entities.copy()
         attempts = 0
 
-        print(f"Generating corruptions for {entity_text} of type {entity_label}")
-        print(f"Remaining entities: {remaining_entities}")
+        logging.debug(f"Generating corruptions for {entity_text} of type {entity_label}")
+        logging.debug(f"Remaining matching entities available: {len(remaining_entities)}")
 
         while remaining_entities and attempts < cls.max_attempts:
             candidate_texts = [e["text"] for e in remaining_entities]
@@ -216,23 +216,23 @@ class InContextModifier:
 
     @classmethod
     def corrupt_question(cls, row):
-        print("---------------------------- New Corruption ----------------------")
         question = row["question"]
+        logging.info(f"--- Corrupting: '{question[:50]}...' ---")
         question_entities = row["question_entities"]
 
         if pd.isna(question):
-            print("Skipping corruption due to missing question")
+            logging.warning("Skipping corruption due to missing question")
             return None
 
         max_complexity = min(cls.complexity, len(question_entities))
-        print(f"Using max complexity: {max_complexity}")
+        logging.debug(f"Using max complexity: {max_complexity}")
 
         corrupted_questions = []
         # Dictionary tracking how many samples we have for each complexity
         complexity_samples = {}
 
         for current_complexity in range(1, max_complexity + 1):
-            print(f"Attempting corruptions with complexity {current_complexity}")
+            logging.debug(f"Attempting corruptions with complexity {current_complexity}")
 
             # Initialize counter for this complexity if not exists
             complexity_samples.setdefault(current_complexity, 0)
@@ -249,12 +249,12 @@ class InContextModifier:
                     and complexity_samples[current_complexity]
                     >= cls.generated_sample_per_complexity_greater_than_1
                 ):
-                    print(
+                    logging.debug(
                         f"Skipping remaining combinations for complexity {current_complexity} - already have {cls.generated_sample_per_complexity_greater_than_1} samples"
                     )
                     break
 
-                print(f"Processing combination: {entity_combination}")
+                logging.debug(f"Processing combination of {len(entity_combination)} entities.")
 
                 # Get corruptions for all entities in the combination
                 all_entity_corruptions = []
@@ -277,7 +277,7 @@ class InContextModifier:
                             break
 
                     except Exception as e:
-                        print(f"Error corrupting entity {entity}: {str(e)}")
+                        logging.error(f"Error corrupting entity {entity.get('text', entity)}: {str(e)}")
                         success = False
                         break
 
@@ -346,7 +346,7 @@ class InContextModifier:
                         and complexity_samples[current_complexity]
                         >= cls.generated_sample_per_complexity_greater_than_1
                     ):
-                        print(
+                        logging.debug(
                             f"Collected {cls.generated_sample_per_complexity_greater_than_1} samples for complexity {current_complexity}, stopping."
                         )
                         break
