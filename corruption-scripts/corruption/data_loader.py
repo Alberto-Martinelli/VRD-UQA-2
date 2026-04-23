@@ -65,10 +65,15 @@ class DataLoader:
                 & (df["answers"].apply(check_answers))
             ]
 
-            # Derive image_dir dynamically from the first document path
-            sample_doc = df.iloc[0]["document"]
-            base_extracted_path = sample_doc.rsplit("PDF", 1)[0]
-            dude_images_dir = os.path.join(base_extracted_path, "DUDE_train-val-test_binaries", "images", "train")
+            # Derive image_dir dynamically based on the environment (Mac vs Linux HPC)
+            sample_doc = df.iloc[0]["document"] if len(df) > 0 else ""
+            if "PDF" in str(sample_doc):
+                # Works perfectly for standard HPC/Huggingface downloaded layouts
+                base_extracted_path = sample_doc.rsplit("PDF", 1)[0]
+                dude_images_dir = os.path.join(base_extracted_path, "DUDE_train-val-test_binaries", "images", "train")
+            else:
+                # Fallback for Mac setups using local images strictly within dataset_json_path
+                dude_images_dir = os.path.join(base_path, dataset_json_path, "images", "train")
 
             # Get document pages using directory scanning
             def get_document_pages(doc_id):
