@@ -2,6 +2,7 @@ from datasets import load_from_disk
 import pandas as pd
 import os
 import json
+import logging
 from pathlib import Path
 
 
@@ -80,17 +81,26 @@ class DataLoader:
                 pages = []
                 if os.path.exists(dude_images_dir):
                     for filename in sorted(os.listdir(dude_images_dir)):
-                        if filename.startswith(f"{doc_id}_") and filename.endswith(
-                            ".jpg"
-                        ):
-                            # Extract just the page ID without extension
-                            page_id = filename[:-4]  # Remove .jpg
-                            pages.append(page_id)
+                        # Look for any image file starting with doc_id (even without an underscore)
+                        if filename.startswith(doc_id) and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                            pages.append(filename)
+                else:
+                    logging.error(f"Warning: dude_images_dir does not exist at {dude_images_dir}!")
                 return pages
 
             # Create necessary columns
             df["doc_id"] = df["docId"]
             df["page_ids"] = df["docId"].apply(get_document_pages)
+            
+            # Warn if 0 page_ids are found
+            empty_docs = df[df["page_ids"].map(len) == 0]
+            if not empty_docs.empty:
+                logging.warning(f"Found {len(empty_docs)} documents with 0 page_ids in {dude_images_dir}!")
+                if os.path.exists(dude_images_dir):
+                    sample_files = os.listdir(dude_images_dir)[:10]
+                    logging.warning(f"Sample files actually present in directory: {sample_files}")
+                    logging.warning(f"We were looking for files starting with doc_id like: {df.iloc[0]['docId']}")
+            
             df["document"] = df["page_ids"].apply(
                 lambda x: [
                     os.path.join(dude_images_dir, f"{pid}.jpg")
