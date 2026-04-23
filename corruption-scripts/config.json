@@ -10,7 +10,7 @@
   "dataset": {
     "name": "DUDE",
     "split": "train",
-    "dataset_json_path": "./data/DUDE/DUDE_sample/qas/train.json"
+    "dataset_json_path": "./data/DUDE/DUDE_sample/qas"
   },
   "corruption": {
     "percentage": 100,

@@ -487,9 +487,19 @@ class DocumentAnalyzer:
             }
 
             # Save incrementally
+            class NumpyEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, (np.int64, np.int32, np.int16, np.int8)): return int(obj)
+                    if isinstance(obj, (np.float64, np.float32, np.float16)): return float(obj)
+                    if isinstance(obj, np.bool_): return bool(obj)
+                    if isinstance(obj, np.ndarray): return obj.tolist()
+                    return super().default(obj)
+                    
             try:
+                # Ensure the directory exists
+                os.makedirs(os.path.dirname(augmented_dataset_path), exist_ok=True)
                 with open(augmented_dataset_path, "w", encoding="utf-8") as f:
-                    json.dump(processed_data, f, indent=4, ensure_ascii=False)
+                    json.dump(processed_data, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
             except Exception as e:
                 logging.error(f"Error saving results to {augmented_dataset_path}: {str(e)}")
 
