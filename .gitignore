@@ -8,6 +8,8 @@ data/
 data_sample/
 old_scripts/
 put_images_script.py
+MPDocVQA_sample/
+DUDE_sample/
 
 .DS_Store
 
