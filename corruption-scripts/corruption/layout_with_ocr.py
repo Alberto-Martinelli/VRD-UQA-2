@@ -351,10 +351,10 @@ class DocumentAnalyzer:
                     "OCR": ocr_result,
                     "PatchPath": patch_path,
                 }
-                print(f"Successfully processed box {idx} ({class_name})")
+                logging.debug(f"Successfully processed box {idx} ({class_name})")
 
             except Exception as e:
-                print(f"Error processing box {idx}: {str(e)}")
+                logging.error(f"Error processing box {idx}: {str(e)}")
                 continue
 
             # Clear CUDA cache periodically
@@ -412,7 +412,7 @@ class DocumentAnalyzer:
                 logging.info(f"Processing document path {document}")
 
                 # Predict layout
-                det_res = self.model.predict(document, conf=0.1)
+                det_res = self.model.predict(document, conf=0.1, verbose=False)
 
                 # Filter overlapping boxes
                 det_res = self.filter_boxes(det_res, threshold=0.6)
