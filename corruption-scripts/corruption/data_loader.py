@@ -9,24 +9,19 @@ from pathlib import Path
 class DataLoader:
     @staticmethod
     def load_dataset(base_path: str, split_type: str, dataset_name: str, dataset_json_path: str = None) -> dict:
-        if dataset_name == "DUDE":
-            path = Path(base_path) / dataset_json_path / f"{split_type}.json"
-            try:
-                with open(path, "r") as file:
-                    return json.load(file)
-            except FileNotFoundError:
-                raise FileNotFoundError(
-                    f"Dataset not found at {path}. Please check the path and ensure the dataset is in the correct format."
-                )
-        elif dataset_name == "MPDocVQA":
-            path = Path(base_path) / dataset_json_path / f"{split_type}.json"
+        path = Path(base_path) / dataset_json_path / f"{split_type}.json"
+        try:
             with open(path, "r") as file:
                 return json.load(file)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Dataset {dataset_name} not found at {path}. Please check the path and ensure the dataset is in the correct format."
+            )
         else:
             raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
     @staticmethod
-    def create_dataframe(raw_dataset_dict: dict, dataset_name: str, base_path: str, dataset_json_path: str) -> pd.DataFrame:
+    def create_dataframe(raw_dataset_dict: dict, dataset_name: str, base_path: str, dataset_json_path: str, split_type: str) -> pd.DataFrame:
         if dataset_name == "MPDocVQA":
             path = os.path.join(base_path, dataset_json_path)
             df = pd.DataFrame(raw_dataset_dict["data"])
@@ -61,7 +56,7 @@ class DataLoader:
                 return bool(x) and len(x) > 0
 
             df = df[
-                (df["data_split"] == "train")
+                (df["data_split"] == split_type)
                 & (df["answers_page_bounding_boxes"].apply(check_bounding_boxes))
                 & (df["answers"].apply(check_answers))
             ]
@@ -89,7 +84,6 @@ class DataLoader:
                 return pages
 
             # Create necessary columns
-            df["doc_id"] = df["docId"]
             df["page_ids"] = df["docId"].apply(get_document_pages)
             
             # Warn if 0 page_ids are found
@@ -110,7 +104,6 @@ class DataLoader:
             df["answer_page_idx"] = df["answers_page_bounding_boxes"].apply(
                 lambda x: x.get("page", [0])[0] if isinstance(x, dict) and x.get("page") else 0
             )
-            df["answers_page_idx"] = df["answer_page_idx"]
             df["questionId"] = df["questionId"].astype(str)
 
             # Select and reorder columns
@@ -118,14 +111,48 @@ class DataLoader:
                 [
                     "questionId",
                     "question",
-                    "doc_id",
-                    "page_ids",
                     "answers",
                     "answer_page_idx",
                     "data_split",
                     "docId",
                     "document",
-                    "answers_page_idx",
+                ]
+            ]
+        
+        elif dataset_name == "SlideVQA":
+            # Create DataFrame with same structure as MPDocVQA
+            df = pd.DataFrame(raw_dataset_dict["data"])
+
+            # Map the SlideVQA specific fields to the pipeline's expected column names
+            df["questionId"] = df["qa_id"].astype(str)
+            df["answers"] = df["answer"]
+            
+            # SlideVQA has answers_page_bounding_boxes.page which contains the index
+            # and evidence_pages which also contains it. We'll use the bounding box one for consistency.
+            df["answer_page_idx"] = df["answers_page_bounding_boxes"].apply(
+                lambda x: x.get("page", [0])[0] if isinstance(x, dict) and x.get("page") else 0
+            )
+
+            # Filter out questions with empty answers and correct data split
+            def check_answers(x):
+                if isinstance(x, float):  # Handle NaN values
+                    return False
+                return bool(x) and len(x) > 0
+
+            df = df[
+                (df["data_split"] == split_type)
+                & (df["answers"].apply(check_answers))
+            ]
+
+            # Select and reorder only the columns needed for the pipeline
+            df = df[
+                [
+                    "questionId",
+                    "question",
+                    "answers",
+                    "answer_page_idx",
+                    "data_split",
+                    "document",
                 ]
             ]
 

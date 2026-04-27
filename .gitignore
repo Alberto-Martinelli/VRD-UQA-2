@@ -10,6 +10,8 @@ old_scripts/
 put_images_script.py
 MPDocVQA_sample/
 DUDE_sample/
+next_steps/
+helper_scripts/
 
 .DS_Store
 

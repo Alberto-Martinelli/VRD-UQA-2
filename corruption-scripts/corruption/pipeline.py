@@ -252,7 +252,7 @@ def extract_corruption_fields(x):
 # STEP 1 (data_loader.py)
 def load_data(params):
     raw_dataset_dict = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
-    questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"])
+    questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"], params["split"])
     logging.info(f"Total questions loaded: {len(questions_df)}")
 
     df_to_corrupt = sample_questions_to_corrupt(questions_df, params["percentage"])
