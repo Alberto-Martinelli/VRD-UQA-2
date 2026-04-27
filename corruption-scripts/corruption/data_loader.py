@@ -139,9 +139,9 @@ class DataLoader:
                     return False
                 return bool(x) and len(x) > 0
 
+            df["data_split"] = split_type
             df = df[
-                (df["data_split"] == split_type)
-                & (df["answers"].apply(check_answers))
+                (df["answers"].apply(check_answers))
             ]
 
             # Select and reorder only the columns needed for the pipeline
