@@ -156,6 +156,41 @@ class DataLoader:
                 ]
             ]
 
+        elif dataset_name == "Bounding Docs":
+            if isinstance(raw_dataset_dict, dict) and "data" in raw_dataset_dict:
+                df = pd.DataFrame(raw_dataset_dict["data"])
+            else:
+                df = pd.DataFrame(raw_dataset_dict)
+            
+            df["questionId"] = df["question_id"].astype(str)
+            df["docId"] = df["doc_id"]
+            df["data_split"] = split_type
+            
+            df["answer_page_idx"] = df["answers"].apply(
+                lambda x: x[0].get("page", 0) if isinstance(x, list) and len(x) > 0 else 0
+            )
+            df["answers"] = df["answers"].apply(
+                lambda x: [ans.get("value", "") for ans in x] if isinstance(x, list) else []
+            )
+            
+            def check_answers(x):
+                if isinstance(x, float):
+                    return False
+                return bool(x) and len(x) > 0
+
+            df = df[df["answers"].apply(check_answers)]
+            
+            df = df[
+                [
+                    "questionId",
+                    "question",
+                    "answers",
+                    "answer_page_idx",
+                    "data_split",
+                    "docId",
+                    "document",
+                ]
+            ]
         else:
             raise ValueError(f"Unsupported dataset type: {dataset_name}")
 

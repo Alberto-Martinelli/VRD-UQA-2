@@ -8,11 +8,17 @@ data/
 data_sample/
 old_scripts/
 put_images_script.py
-MPDocVQA_sample/
-DUDE_sample/
 next_steps/
 helper_scripts/
+
+MPDocVQA_sample/
+DUDE_sample/
 SlideVQA_sample/
+BDocs_sample/
+
+INFO.md 
+
+
 
 .DS_Store
 
