@@ -252,6 +252,7 @@ def extract_corruption_fields(x):
 # STEP 1 (data_loader.py)
 def load_data(params):
     raw_dataset_dict = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
+    logging.info(f"Total questions in original dataset: {len(raw_dataset_dict['data'])}")
     questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"], params["split"])
     logging.info(f"Total questions loaded: {len(questions_df)}")
 
@@ -392,12 +393,16 @@ def corrupt_questions(params, entity_identifier):
 
     # Remove corruptions that are identical to the original or have bad formatting
     removed = clean_corrupted_questions(params["output_corrupted"], params["output_corrupted_cleaned"])
+    
+    total_variants = int(len(df_results))
+    failed_gracefully = total_variants - int(df_results["is_corrupted"].sum())
+    llm_duplicate_removals = removed['duplicates'] - failed_gracefully
+    final_cleaned_count = total_variants - removed['duplicates'] - removed['invalid_format']
+
     logging.info(f"From an initial {len(augmented_dataset.keys())} questions (total number of questions in augmented dataset)")
     logging.info(f"Total questions processed: {len(df_augmented)}")
-    logging.info(f"We identified {int(len(df_results))} corruption variants")
-    logging.info(f"Out of which {int(df_results["is_corrupted"].sum())} corrupted questions were successfully (safely) generated")
-
-    logging.info(f"Removed {removed['duplicates']} questions where corrupted matched original")
-    logging.info(f"Removed also {removed['invalid_format']} questions with invalid format")
-
-
+    logging.info(f"We identified {total_variants} corruption variants")
+    logging.info(f"  -> {failed_gracefully} variants failed gracefully (e.g., couldn't find matching entity in OCR to swap)")
+    logging.info(f"  -> {llm_duplicate_removals} questions were removed because the LLM rewrote them identically to the original")
+    logging.info(f"  -> {removed['invalid_format']} questions were removed for invalid format (e.g., hallucinated tags)")
+    logging.info(f"=== Final cleaned corrupted questions available: {final_cleaned_count} ===")

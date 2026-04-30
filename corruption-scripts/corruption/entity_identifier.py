@@ -150,10 +150,10 @@ def _chunk_text(text: str, max_len: int = MAX_CHUNK_LENGTH) -> list[str]:
 
 
 def _clean_entity_text(text: str) -> str:
-    """Normalise whitespace, strip punctuation, lowercase."""
+    """Normalise whitespace, strip punctuation."""
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"[^\w\s.-]", "", text)
-    text = text.strip(" -").lower()
+    text = text.strip(" -")
     return text
 
 

@@ -101,7 +101,7 @@ class InContextModifier:
                                 }
                             )
 
-                # Simple replacement
+                # Simple replacement using the exact original string
                 corrupted_question = question.replace(entity_text, selected_entity)
 
                 corruptions.append(
