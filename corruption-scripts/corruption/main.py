@@ -40,7 +40,7 @@ def get_env_bool(key, default=False):
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
 
 def main(config_path=None):
-    print("\nStarting the question corruption and verification process...")
+    logging.info("\nStarting the question corruption and verification process...")
 
     # Load configuration
     config = load_config(config_path)
@@ -48,51 +48,51 @@ def main(config_path=None):
     print_parameters(params)
 
     # Load data
-    print("\n")
-    print(
+    logging.info("\n")
+    logging.info(
         "----------------------------------- 1. Loading data -----------------------------------"
     )
-    print("\n")
+    logging.info("\n")
 
     df_to_corrupt = load_data(params)
 
-    print("\n")
-    print(
+    logging.info("\n")
+    logging.info(
         "----------------------------------- 2. Identifying entities (Optional)-----------------------------------"
     )
-    print("\n")
+    logging.info("\n")
 
     questions_list, question_with_entities, entity_identifier = identify_all_entities(params, df_to_corrupt)
 
-    print(f"\nQuestions with identified entities: {sum(1 for entities in question_with_entities if entities)}")
+    logging.info(f"\nQuestions with identified entities: {sum(1 for entities in question_with_entities if entities)}")
 
-    print("\nExample of question with identified entities:")
+    logging.info("\nExample of question with identified entities:")
     for i, (question, entities) in enumerate(zip(questions_list[:3], question_with_entities[:3])):
-        print(f"\nQuestion {i+1}: {question}")
-        print(f"Entities: {entities}")
+        logging.info(f"\nQuestion {i+1}: {question}")
+        logging.info(f"Entities: {entities}")
 
     # Process layout analysis
-    print("\n")
-    print(
+    logging.info("\n")
+    logging.info(
         "----------------------------------- 3. Analyzing document layout -----------------------------------"
     )
-    print("\n")
+    logging.info("\n")
 
     df_to_corrupt = create_augmented_dataset(params, df_to_corrupt)
 
-    print("\n")
-    print(
+    logging.info("\n")
+    logging.info(
         "----------------------------------- 4. In-context corruption -----------------------------------"
     )
-    print("\n")
+    logging.info("\n")
 
     corrupt_questions(params, entity_identifier)
 
-    print("\n")
-    print(
+    logging.info("\n")
+    logging.info(
         "----------------------------------- Process completed successfully! -----------------------------------"
     )
-    print("\n")
+    logging.info("\n")
 
 
 if __name__ == "__main__":

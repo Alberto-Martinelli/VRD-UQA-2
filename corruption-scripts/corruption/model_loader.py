@@ -2,6 +2,7 @@ import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import ollama
+import logging
 
 
 class ModelLoader:
@@ -29,10 +30,10 @@ class ModelLoader:
             and self.model_name == model_name
             and self.model_provider == model_provider
         ):
-            print(f"Model {model_name} is already loaded. Skipping load.")
+            logging.info(f"Model {model_name} is already loaded. Skipping load.")
             return self.model
 
-        print(f"Loading model: {model_name} using {model_provider}")
+        logging.info(f"Loading model: {model_name} using {model_provider}")
         self.model_provider = model_provider
         self.model_name = model_name
 
@@ -48,7 +49,7 @@ class ModelLoader:
         else:
             raise ValueError(f"Unsupported model provider: {model_provider}")
 
-        print("Model loaded successfully.")
+        logging.info("Model loaded successfully.")
         return self.model
 
     def generate_text(self, prompt, max_new_tokens=256):
@@ -120,7 +121,7 @@ class ModelLoader:
             return response.strip()
 
         elif self.model_provider == "ollama":
-            print(f"Generating text with {self.model_name}")
+            logging.info(f"Generating text with {self.model_name}")
             response = self.model.chat(
                 model=self.model_name,
                 options={

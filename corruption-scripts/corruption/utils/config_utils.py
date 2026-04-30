@@ -1,4 +1,5 @@
 import json
+import logging
 
 def get_default_config():
     return {
@@ -41,10 +42,10 @@ def load_config(config_path="code/corruption-scripts/config.json"):
                 return get_default_config()
         return config
     except FileNotFoundError:
-        print(f"Config file not found at {config_path}. Using default configuration.")
+        logging.error(f"Config file not found at {config_path}. Using default configuration.")
         return get_default_config()
     except json.JSONDecodeError:
-        print(
+        logging.error(
             f"Error parsing config file at {config_path}. Using default configuration."
         )
         return get_default_config()
@@ -81,6 +82,6 @@ def extract_config(config):
     }
 
 def print_parameters(params):
-    print("\nUsing the following parameters:")
+    logging.info("\nUsing the following parameters:")
     for k, v in params.items():
-        print(f"\t>{k.replace('_', ' ').capitalize()}: {v}")
+        logging.info(f"\t>{k.replace('_', ' ').capitalize()}: {v}")
