@@ -47,6 +47,9 @@ class InContextModifier:
         patch_entities,
         row,
     ):
+        """
+            Scan the documnet page where the answer is located and find other entities of the same type and with the same text.
+        """
         entity_text = entity["text"] if isinstance(entity, dict) else str(entity)
         entity_label = (
             entity.get("label", "unknown") if isinstance(entity, dict) else "unknown"
@@ -217,27 +220,29 @@ class InContextModifier:
     @classmethod
     def corrupt_question(cls, row):
         question = row["question"]
-        logging.info(f"--- Corrupting: '{question[:50]}...' ---")
+        logging.info(f"\n--- Corrupting: '{question[:50]}...' ---")
         question_entities = row["question_entities"]
 
         if pd.isna(question):
-            logging.warning("Skipping corruption due to missing question")
+            logging.warning("\tSkipping corruption due to missing question")
             return None
 
         max_complexity = min(cls.complexity, len(question_entities))
-        logging.debug(f"Using max complexity: {max_complexity}")
+        logging.debug(f"\tUsing max complexity: {max_complexity}")
 
         corrupted_questions = []
         # Dictionary tracking how many samples we have for each complexity
         complexity_samples = {}
 
         for current_complexity in range(1, max_complexity + 1):
-            logging.debug(f"Attempting corruptions with complexity {current_complexity}")
+            logging.debug(f"\tAttempting corruptions with complexity {current_complexity}")
 
             # Initialize counter for this complexity if not exists
             complexity_samples.setdefault(current_complexity, 0)
 
             # Build all entity combinations
+            # Example: if question_entities = [John, Tesla, 2020] and current_complexity = 2, 
+            # entity_combinations will be [(John, Tesla), (John, 2020), (Tesla, 2020)]
             entity_combinations = itertools.combinations(
                 question_entities, current_complexity
             )
@@ -250,12 +255,13 @@ class InContextModifier:
                     >= cls.generated_sample_per_complexity_greater_than_1
                 ):
                     logging.debug(
-                        f"Skipping remaining combinations for complexity {current_complexity} - already have {cls.generated_sample_per_complexity_greater_than_1} samples"
+                        f"\tSkipping remaining combinations for complexity {current_complexity} - already have {cls.generated_sample_per_complexity_greater_than_1} samples"
                     )
                     break
 
-                logging.debug(f"Processing combination of {len(entity_combination)} entities.")
-
+                # Example: entity_combination = (John, Tesla)
+                logging.debug(f"\tProcessing combination of {len(entity_combination)} entities.")
+                
                 # Get corruptions for all entities in the combination
                 all_entity_corruptions = []
                 success = True
@@ -285,6 +291,8 @@ class InContextModifier:
                     continue
 
                 # Generate all possible combinations of corruptions
+                # Example: if all_entity_corruptions = [[(cor_1_a), (cor_1_b)], [(cor_2_a), (cor_2_b)]]
+                # corruption_combinations will be [(cor_1_a, cor_2_a), (cor_1_a, cor_2_b), (cor_1_b, cor_2_a), (cor_1_b, cor_2_b)]
                 corruption_combinations = itertools.product(*all_entity_corruptions)
 
                 for corruption_combination in corruption_combinations:
@@ -350,8 +358,12 @@ class InContextModifier:
                             f"Collected {cls.generated_sample_per_complexity_greater_than_1} samples for complexity {current_complexity}, stopping."
                         )
                         break
-
+                    
+        # LLM rewrite for fluency
         # After building the corrupted questions, rewrite them with the final prompt
+        # Example:
+        #  original_question: "Which company had the most sales in 2022?"
+        #  corrupted_question: "Which Microsoft had the most sales in 2022?"
         if corrupted_questions:
             for cq in corrupted_questions:
                 all_corrupted_entities = set(

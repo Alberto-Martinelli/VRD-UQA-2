@@ -345,6 +345,7 @@ def corrupt_questions(params, entity_identifier):
 
     # --- 4d. Flatten results: one row per corruption variant ---
     # Each question may produce multiple corruptions; explode into separate rows
+    logging.info("\nCorruption completed. Flattening results...")
     df_results = df_augmented.explode("corrupted_data").reset_index(drop=True)
 
     # Unpack the nested corruption dicts into flat columns
@@ -385,6 +386,7 @@ def corrupt_questions(params, entity_identifier):
         ).value_counts().to_dict(),
     }
 
+    logging.info(f"\nSaving corrupted questions to file {params['output_corrupted']}...")
     with open(params["output_corrupted"], "w") as f:
         json.dump({"corrupted_questions": records, "metadata": metadata}, f, indent=2)
 

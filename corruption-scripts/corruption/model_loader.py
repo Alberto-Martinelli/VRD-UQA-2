@@ -30,10 +30,10 @@ class ModelLoader:
             and self.model_name == model_name
             and self.model_provider == model_provider
         ):
-            logging.info(f"Model {model_name} is already loaded. Skipping load.")
+            logging.info(f"\nModel {model_name} is already loaded. Skipping load.\n")
             return self.model
 
-        logging.info(f"Loading model: {model_name} using {model_provider}")
+        logging.info(f"\nLoading model: {model_name} using {model_provider}\n")
         self.model_provider = model_provider
         self.model_name = model_name
 

@@ -18,7 +18,7 @@ from pipeline import load_data, identify_all_entities, create_augmented_dataset,
 
 logging.basicConfig(
     # level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    level=logging.INFO, format="%(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(levelname)s - %(message)s"
 )
 # Silence noisy third-party loggers
 for logger_name in ["httpx", "httpcore", "gliner", "transformers", "sentence_transformers", "sentencepiece"]:
