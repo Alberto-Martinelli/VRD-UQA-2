@@ -12,6 +12,7 @@ class InContextModifier:
     max_attempts = 5
     model_loader = None
     generated_sample_per_complexity_greater_than_1 = 5
+    _first_question_logged = False
 
     @classmethod
     def set_model_loader(cls, model_loader):
@@ -355,6 +356,10 @@ Important: Return only the rewritten question, without any explanation or introd
             )
 
             for entity_subset in entity_combinations:
+                if not cls._first_question_logged:
+                    subset_names = [e.get('text', e) if isinstance(e, dict) else e for e in entity_subset]
+                    logging.debug(f"\t---> Targeting subset: {subset_names}")
+
                 # If we already have 2 samples for complexity > 1, skip further
                 if (
                     current_complexity > 1
@@ -375,7 +380,13 @@ Important: Return only the rewritten question, without any explanation or introd
                 )
 
                 if not candidate_pools:
+                    if not cls._first_question_logged:
+                        logging.debug("\t\tNo candidates found for this subset.")
                     continue
+
+                if not cls._first_question_logged:
+                    pool_sizes = [len(pool) for pool in candidate_pools]
+                    logging.debug(f"\t\tFound candidate pools with sizes: {pool_sizes}")
 
                 # Generate all possible combinations of corruptions
                 # Example: if candidate_pools = [[(cor_1_a), (cor_1_b)], [(cor_2_a), (cor_2_b)]]
@@ -427,6 +438,13 @@ Important: Return only the rewritten question, without any explanation or introd
             original_question = sample["corruption"]["original_question"]
             current_corrupted_question = sample["corruption"]["corrupted_question"]
 
+            if not cls._first_question_logged:
+                logging.debug(f"\t[Rewrite] Before: {current_corrupted_question}")
+
             sample["corruption"]["corrupted_question"] = cls.rewrite_question(all_corrupted_entities, original_question, current_corrupted_question)
 
+            if not cls._first_question_logged:
+                logging.debug(f"\t[Rewrite] After:  {sample['corruption']['corrupted_question']}")
+
+        cls._first_question_logged = True
         return generated_samples
