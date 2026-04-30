@@ -392,7 +392,12 @@ def corrupt_questions(params, entity_identifier):
 
     # Remove corruptions that are identical to the original or have bad formatting
     removed = clean_corrupted_questions(params["output_corrupted"], params["output_corrupted_cleaned"])
-    logging.info(f"Removed {removed['duplicates']} questions where corrupted matched original")
-    logging.info(f"Removed {removed['invalid_format']} questions with invalid format")
+    logging.info(f"From an initial {len(augmented_dataset.keys())} questions (total number of questions in augmented dataset)")
     logging.info(f"Total questions processed: {len(df_augmented)}")
-    logging.info(f"Number of corrupted questions generated safely: {df_results['is_corrupted'].sum()}")
+    logging.info(f"We identified {int(len(df_results))} corruption variants")
+    logging.info(f"Out of which {int(df_results["is_corrupted"].sum())} corrupted questions were successfully (safely) generated")
+
+    logging.info(f"Removed {removed['duplicates']} questions where corrupted matched original")
+    logging.info(f"Removed also {removed['invalid_format']} questions with invalid format")
+
+
