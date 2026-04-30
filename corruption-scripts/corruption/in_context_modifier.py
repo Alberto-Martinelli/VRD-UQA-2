@@ -39,93 +39,6 @@ class InContextModifier:
         return cls.model_loader.generate_text(prompt)
 
     @classmethod
-    def corrupt_entity(
-        cls,
-        entity,
-        question,
-        original_answer_locations,
-        patch_entities,
-        row,
-    ):
-        """
-            Scan the documnet page where the answer is located and find other entities of the same type and with the same text.
-        """
-        entity_text = entity["text"] if isinstance(entity, dict) else str(entity)
-        entity_label = (
-            entity.get("label", "unknown") if isinstance(entity, dict) else "unknown"
-        )
-
-        # Get answer info
-        answer_text = ""
-        original_obj_id = ""
-        original_bbox = []
-        answer_page_key = ""
-
-        for answer_loc in original_answer_locations:
-            answer_text = answer_loc.get("answer", "")
-            answer_page_key = answer_loc.get("page_id", "")
-            original_obj_id = answer_loc.get("object_typeID", "")
-            original_bbox = answer_loc.get("bbox", [])
-
-            logging.debug(f"Found answer: {answer_text} on page: {answer_page_key}")
-
-        logging.debug(f"Processing entity: {entity_text} of type {entity_label}")
-        corruptions = []
-
-        if cls.in_document and original_answer_locations:
-            # Get the first answer location
-            answer_loc = original_answer_locations[0]
-            answer_page_key = answer_loc["page_id"]
-            answer_text = answer_loc["answer"]
-            original_layout_type = answer_loc["object_type"]
-            original_bbox = answer_loc["bbox"]
-
-            logging.debug(
-                f"Found answer: {answer_text} on page: {answer_page_key} in layout type: {original_layout_type}"
-            )
-
-            # Collect ALL entities of the same type
-            all_matching_entities = []
-            entity_counter = 0  # Counter for unique IDs
-
-            for page_id, page_data in patch_entities.items():
-                for obj_id, obj_data in page_data.items():
-                    matching_entities = [
-                        {
-                            "text": e["text"],
-                            "label": e["label"],
-                            "page_id": page_id,
-                            "layout_type": obj_data["type"],
-                            "layout_type_id": obj_data["typeID"],
-                            "bbox": obj_data["bbox"],
-                            "obj_id": f"{obj_id}_entity_{entity_counter}",  # Make obj_id unique
-                        }
-                        for e in obj_data["entities"]
-                        if e.get("label") == entity_label
-                        and e["text"].lower() != entity_text.lower()
-                    ]
-
-                    # Increment counter for each entity
-                    entity_counter += len(matching_entities)
-                    all_matching_entities.extend(matching_entities)
-
-            corruptions.extend(
-                cls._generate_corruptions(
-                    all_matching_entities,
-                    entity_text,
-                    entity_label,
-                    question,
-                    answer_page_key,
-                    original_bbox,
-                    original_obj_id,
-                    original_layout_type,
-                    answer_text,
-                )
-            )
-
-        return corruptions
-
-    @classmethod
     def _generate_corruptions(
         cls,
         candidate_entities,
@@ -218,161 +131,168 @@ class InContextModifier:
         return corruptions
 
     @classmethod
-    def corrupt_question(cls, row):
-        question = row["question"]
-        logging.info(f"\n--- Corrupting: '{question[:50]}...' ---")
-        question_entities = row["question_entities"]
+    def corrupt_entity(
+        cls,
+        entity,
+        question,
+        original_answer_locations,
+        patch_entities,
+        row,
+    ):
+        """
+            Scan the documnet page where the answer is located and find other entities of the same type and with the same text.
+        """
+        entity_text = entity["text"] if isinstance(entity, dict) else str(entity)
+        entity_label = (
+            entity.get("label", "unknown") if isinstance(entity, dict) else "unknown"
+        )
 
-        if pd.isna(question):
-            logging.warning("\tSkipping corruption due to missing question")
-            return None
+        # Get answer info
+        answer_text = ""
+        original_obj_id = ""
+        original_bbox = []
+        answer_page_key = ""
 
-        max_complexity = min(cls.complexity, len(question_entities))
-        logging.debug(f"\tUsing max complexity: {max_complexity}")
+        for answer_loc in original_answer_locations:
+            answer_text = answer_loc.get("answer", "")
+            answer_page_key = answer_loc.get("page_id", "")
+            original_obj_id = answer_loc.get("object_typeID", "")
+            original_bbox = answer_loc.get("bbox", [])
 
-        corrupted_questions = []
-        # Dictionary tracking how many samples we have for each complexity
-        complexity_samples = {}
+            logging.debug(f"Found answer: {answer_text} on page: {answer_page_key}")
 
-        for current_complexity in range(1, max_complexity + 1):
-            logging.debug(f"\tAttempting corruptions with complexity {current_complexity}")
+        logging.debug(f"Processing entity: {entity_text} of type {entity_label}")
+        corruptions = []
 
-            # Initialize counter for this complexity if not exists
-            complexity_samples.setdefault(current_complexity, 0)
+        if cls.in_document and original_answer_locations:
+            # Get the first answer location
+            answer_loc = original_answer_locations[0]
+            answer_page_key = answer_loc["page_id"]
+            answer_text = answer_loc["answer"]
+            original_layout_type = answer_loc["object_type"]
+            original_bbox = answer_loc["bbox"]
 
-            # Build all entity combinations
-            # Example: if question_entities = [John, Tesla, 2020] and current_complexity = 2, 
-            # entity_combinations will be [(John, Tesla), (John, 2020), (Tesla, 2020)]
-            entity_combinations = itertools.combinations(
-                question_entities, current_complexity
+            logging.debug(
+                f"Found answer: {answer_text} on page: {answer_page_key} in layout type: {original_layout_type}"
             )
 
-            for entity_combination in entity_combinations:
-                # If we already have 2 samples for complexity > 1, skip further
-                if (
-                    current_complexity > 1
-                    and complexity_samples[current_complexity]
-                    >= cls.generated_sample_per_complexity_greater_than_1
-                ):
-                    logging.debug(
-                        f"\tSkipping remaining combinations for complexity {current_complexity} - already have {cls.generated_sample_per_complexity_greater_than_1} samples"
-                    )
-                    break
+            # Collect ALL entities of the same type
+            all_matching_entities = []
+            entity_counter = 0  # Counter for unique IDs
 
-                # Example: entity_combination = (John, Tesla)
-                logging.debug(f"\tProcessing combination of {len(entity_combination)} entities.")
-                
-                # Get corruptions for all entities in the combination
-                all_entity_corruptions = []
-                success = True
-
-                for entity in entity_combination:
-                    try:
-                        entity_corruptions = cls.corrupt_entity(
-                            entity,
-                            question,
-                            row.get("original_answer_locations", []),
-                            row.get("patch_entities", {}),
-                            row,
-                        )
-
-                        if entity_corruptions:
-                            all_entity_corruptions.append(entity_corruptions)
-                        else:
-                            success = False
-                            break
-
-                    except Exception as e:
-                        logging.error(f"Error corrupting entity {entity.get('text', entity)}: {str(e)}")
-                        success = False
-                        break
-
-                if not success or not all_entity_corruptions:
-                    continue
-
-                # Generate all possible combinations of corruptions
-                # Example: if all_entity_corruptions = [[(cor_1_a), (cor_1_b)], [(cor_2_a), (cor_2_b)]]
-                # corruption_combinations will be [(cor_1_a, cor_2_a), (cor_1_a, cor_2_b), (cor_1_b, cor_2_a), (cor_1_b, cor_2_b)]
-                corruption_combinations = itertools.product(*all_entity_corruptions)
-
-                for corruption_combination in corruption_combinations:
-                    # If we already have 2 samples for complexity > 1, skip further
-                    if (
-                        current_complexity > 1
-                        and complexity_samples[current_complexity]
-                        >= cls.generated_sample_per_complexity_greater_than_1
-                    ):
-                        break
-
-                    # Apply all corruptions sequentially
-                    current_question = question
-                    all_originals = []
-                    all_corrupted_entities = []
-                    all_entity_types = []
-
-                    for corruption in corruption_combination:
-                        current_question = current_question.replace(
-                            corruption["original"]["text"],
-                            corruption["corrupted_entities"][0]["text"],
-                        )
-                        all_originals.append(corruption["original"])
-                        all_corrupted_entities.extend(corruption["corrupted_entities"])
-                        all_entity_types.append(corruption["entity_type"])
-
-                    # Create a string of all question entities for reference
-                    entities_string = ", ".join(
-                        [
-                            str(e["text"]) if isinstance(e, dict) else str(e)
-                            for e in question_entities
-                        ]
-                    )
-
-                    # Combine
-                    combined_corruption = {
-                        "original_question": question,
-                        "corrupted_question": current_question,
-                        "corruptions": list(corruption_combination),
-                        "entity_type": all_entity_types,
-                        "original": all_originals,
-                        "corrupted_entities": all_corrupted_entities,
-                    }
-
-                    corrupted_questions.append(
+            for page_id, page_data in patch_entities.items():
+                for obj_id, obj_data in page_data.items():
+                    matching_entities = [
                         {
-                            "corruption": combined_corruption,
-                            "complexity": current_complexity,
-                            "question_entities": entities_string,
+                            "text": e["text"],
+                            "label": e["label"],
+                            "page_id": page_id,
+                            "layout_type": obj_data["type"],
+                            "layout_type_id": obj_data["typeID"],
+                            "bbox": obj_data["bbox"],
+                            "obj_id": f"{obj_id}_entity_{entity_counter}",  # Make obj_id unique
                         }
-                    )
+                        for e in obj_data["entities"]
+                        if e.get("label") == entity_label
+                        and e["text"].lower() != entity_text.lower()
+                    ]
 
-                    # Increment our sample count
-                    complexity_samples[current_complexity] += 1
+                    # Increment counter for each entity
+                    entity_counter += len(matching_entities)
+                    all_matching_entities.extend(matching_entities)
 
-                    # If complexity > 1 and we have 2 samples, stop
-                    if (
-                        current_complexity > 1
-                        and complexity_samples[current_complexity]
-                        >= cls.generated_sample_per_complexity_greater_than_1
-                    ):
-                        logging.debug(
-                            f"Collected {cls.generated_sample_per_complexity_greater_than_1} samples for complexity {current_complexity}, stopping."
-                        )
-                        break
-                    
-        # LLM rewrite for fluency
-        # After building the corrupted questions, rewrite them with the final prompt
-        # Example:
-        #  original_question: "Which company had the most sales in 2022?"
-        #  corrupted_question: "Which Microsoft had the most sales in 2022?"
-        if corrupted_questions:
-            for cq in corrupted_questions:
-                all_corrupted_entities = set(
-                    entity["text"] for entity in cq["corruption"]["corrupted_entities"]
+            corruptions.extend(
+                cls._generate_corruptions(
+                    all_matching_entities,
+                    entity_text,
+                    entity_label,
+                    question,
+                    answer_page_key,
+                    original_bbox,
+                    original_obj_id,
+                    original_layout_type,
+                    answer_text,
                 )
-                original_question = cq["corruption"]["original_question"]
-                current_corrupted_question = cq["corruption"]["corrupted_question"]
+            )
 
-                prompt = f"""You are given two questions. The first one is the original one, the second one is the corrupted one.
+        return corruptions
+
+    @classmethod
+    def _get_corruptions_for_combination(cls, entity_combination, question, row):
+        """
+        Attempts to get corruptions for every entity in a combination.
+        Returns a list of corruption lists if ALL entities succeed, otherwise returns None.
+        """
+        all_entity_corruptions = []
+
+        for entity in entity_combination:
+            try:
+                entity_corruptions = cls.corrupt_entity(
+                    entity,
+                    question,
+                    row.get("original_answer_locations", []),
+                    row.get("patch_entities", {}),
+                    row,
+                )
+
+                if not entity_corruptions:
+                    return None
+
+                all_entity_corruptions.append(entity_corruptions)
+
+            except Exception as e:
+                logging.error(f"Error corrupting entity {entity.get('text', entity)}: {str(e)}")
+                return None
+        return all_entity_corruptions
+
+    @classmethod
+    def _apply_corruption_combination(cls, question, corruption_combination, current_complexity, question_entities):
+        """
+        Applies a set of corruptions to a question string and packages the metadata.
+        """
+        current_question = question
+        all_originals = []
+        all_corrupted_entities = []
+        all_entity_types = []
+        # Sequentially replace original entities with corrupted ones
+        for corruption in corruption_combination:
+            # corruption["corrupted_entities"] is a list of occurrences of the SAME text
+            # so we just take the text from the first one for the replacement.
+            replacement_text = corruption["corrupted_entities"][0]["text"]
+            
+            current_question = current_question.replace(
+                corruption["original"]["text"],
+                replacement_text
+            )
+            
+            all_originals.append(corruption["original"])
+            all_corrupted_entities.extend(corruption["corrupted_entities"])
+            all_entity_types.append(corruption["entity_type"])
+        # Helper for the reference string in the final output
+        entities_string = ", ".join(
+            [str(e["text"]) if isinstance(e, dict) else str(e) for e in question_entities]
+        )
+        # Build the final structured object
+        return {
+            "corruption": {
+                "original_question": question,
+                "corrupted_question": current_question,
+                "corruptions": list(corruption_combination),
+                "entity_type": all_entity_types,
+                "original": all_originals,
+                "corrupted_entities": all_corrupted_entities,
+            },
+            "complexity": current_complexity,
+            "question_entities": entities_string,
+        }
+
+    @classmethod
+    def rewrite_question(cls, all_corrupted_entities, original_question, current_corrupted_question):
+            """
+            Prompts the LLM to rewrite the corrupted question to make it meaningful.
+            Returns the rewritten question.
+            """
+            prompt = f"""You are given two questions. The first one is the original one, the second one is the corrupted one.
 The corruption is done based on entities extracted from the original question.
 
 Original question: "{original_question}"
@@ -401,7 +321,112 @@ Correct rewrite: "Did Microsoft have the most sales in 2022?"
 Important: The following corrupted entities must be preserved in the rewritten question: {list(all_corrupted_entities)}
 Important: Return only the rewritten question, without any explanation or introductions."""
 
-                final_rewritten_question = cls.generate_text(prompt).strip()
-                cq["corruption"]["corrupted_question"] = final_rewritten_question
+            final_rewritten_question = cls.generate_text(prompt).strip()
+            return final_rewritten_question
+        
+    @classmethod
+    def corrupt_question(cls, row):
+        question = row["question"]
+        logging.info(f"\n--- Corrupting: '{question[:50]}...' ---")
+        question_entities = row["question_entities"]
 
-        return corrupted_questions if corrupted_questions else None
+        if pd.isna(question):
+            logging.warning("\tSkipping corruption due to missing question")
+            return None
+
+        max_complexity = min(cls.complexity, len(question_entities))
+        logging.debug(f"\tUsing max complexity: {max_complexity}")
+
+        generated_samples = []
+        # Dictionary tracking how many samples we have for each complexity
+        complexity_samples = {}
+
+        for current_complexity in range(1, max_complexity + 1):
+            logging.debug(f"\tAttempting corruptions with complexity {current_complexity}")
+
+            # Initialize counter for this complexity if not exists
+            complexity_samples.setdefault(current_complexity, 0)
+
+            # Build all entity combinations
+            # Example: if question_entities = [John, Tesla, 2020] and current_complexity = 2, 
+            # entity_combinations will be [(John, Tesla), (John, 2020), (Tesla, 2020)]
+            entity_combinations = itertools.combinations(
+                question_entities, current_complexity
+            )
+
+            for entity_subset in entity_combinations:
+                # If we already have 2 samples for complexity > 1, skip further
+                if (
+                    current_complexity > 1
+                    and complexity_samples[current_complexity]
+                    >= cls.generated_sample_per_complexity_greater_than_1
+                ):
+                    logging.debug(
+                        f"\tSkipping remaining combinations for complexity {current_complexity} - already have {cls.generated_sample_per_complexity_greater_than_1} samples"
+                    )
+                    break
+
+                # Example: entity_subset = (John, Tesla)
+                logging.debug(f"\tProcessing combination of {len(entity_subset)} entities.")
+                
+                # Get corruptions for all entities in the combination (all or nothing)
+                candidate_pools = cls._get_corruptions_for_combination(
+                    entity_subset, question, row
+                )
+
+                if not candidate_pools:
+                    continue
+
+                # Generate all possible combinations of corruptions
+                # Example: if candidate_pools = [[(cor_1_a), (cor_1_b)], [(cor_2_a), (cor_2_b)]]
+                # corruption_combinations will be [(cor_1_a, cor_2_a), (cor_1_a, cor_2_b), (cor_1_b, cor_2_a), (cor_1_b, cor_2_b)]
+                corruption_combinations = itertools.product(*candidate_pools)
+
+                for selected_replacements in corruption_combinations:
+                    #  Early exit check for sampling limits
+                    # If we already have 2 samples for complexity > 1, skip further
+                    if (
+                        current_complexity > 1
+                        and complexity_samples[current_complexity]
+                        >= cls.generated_sample_per_complexity_greater_than_1
+                    ):
+                        break
+
+                    new_sample = cls._apply_corruption_combination(
+                        question, selected_replacements, current_complexity, question_entities
+                    )
+                    generated_samples.append(new_sample)
+
+                    # Increment our sample count
+                    complexity_samples[current_complexity] += 1
+
+                    # Final exit check for sampling limits
+                    # If complexity > 1 and we have 2 samples, stop
+                    if (
+                        current_complexity > 1
+                        and complexity_samples[current_complexity]
+                        >= cls.generated_sample_per_complexity_greater_than_1
+                    ):
+                        logging.debug(
+                            f"Reached limit for complexity{current_complexity}. Collected {cls.generated_sample_per_complexity_greater_than_1} samples for complexity {current_complexity}, stopping."
+                        )
+                        break
+                    
+        # LLM rewrite for fluency
+        # After building the corrupted questions, rewrite them with the final prompt
+        # Example:
+        #  original_question: "Which company had the most sales in 2022?"
+        #  corrupted_question: "Which Microsoft had the most sales in 2022?"
+        if not generated_samples:
+            return None
+
+        for sample in generated_samples:
+            all_corrupted_entities = set(
+                entity["text"] for entity in sample["corruption"]["corrupted_entities"]
+            )
+            original_question = sample["corruption"]["original_question"]
+            current_corrupted_question = sample["corruption"]["corrupted_question"]
+
+            sample["corruption"]["corrupted_question"] = cls.rewrite_question(all_corrupted_entities, original_question, current_corrupted_question)
+
+        return generated_samples
