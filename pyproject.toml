@@ -10,6 +10,7 @@ dependencies = [
     "doclayout-yolo>=0.0.4",
     "gliner>=0.2.25",
     "huggingface-hub<=1.5.0",
+    "langdetect>=1.0.9",
     "nltk>=3.9.3",
     "ollama>=0.6.1",
     "pandas>=3.0.1",

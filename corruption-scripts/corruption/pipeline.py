@@ -9,6 +9,7 @@ from tqdm import tqdm
 from model_loader import ModelLoader
 from in_context_modifier import InContextModifier
 import logging
+import re
 
 # ------------ Helpers ------------
 def sample_questions_to_corrupt(questions_df, percentage):
@@ -61,6 +62,9 @@ def find_answer_bbox(row):
     document = row["question_data"]["document"]
     original_answer_locations = []
 
+    def normalize_text(text):
+        return re.sub(r'[\s_]+', '', str(text)).lower()
+
     # Get the correct page filename using the answer_page_idx
     if answer_page_idx < len(document):
         answer_page_path = document[answer_page_idx]
@@ -75,10 +79,12 @@ def find_answer_bbox(row):
             # Iterate through each object in the page
             for obj_id, obj_data in layout_objects.items():
                 ocr_text = obj_data.get("OCR", "")
+                norm_ocr = normalize_text(ocr_text)
 
                 # Check if any of the answers appear in the OCR text
                 for answer in answers:
-                    if str(answer) in ocr_text:
+                    norm_ans = normalize_text(answer)
+                    if norm_ans in norm_ocr:
                         original_answer_locations.append(
                             {
                                 "page_id": page_filename,
