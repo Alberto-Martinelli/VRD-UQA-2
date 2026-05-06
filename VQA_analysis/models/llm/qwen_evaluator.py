@@ -2,7 +2,7 @@ import json
 import os
 import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import random
 import datetime
 import traceback
