@@ -17,7 +17,7 @@ image_dir = os.path.join(base_dir, "data/SlideVQA/images/train")
 os.makedirs(image_dir, exist_ok=True)
 
 # 4. Select a small sample
-small_dataset = dataset.select(range(18))
+small_dataset = dataset.select(range(24))
 
 processed_data = []
 print(f"Processing {len(small_dataset)} questions and extracting images...")

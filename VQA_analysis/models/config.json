@@ -93,43 +93,43 @@
         "phi": {
             "name": "Phi",
             "model_name": "microsoft/Phi-3.5-vision-instruct",
-            "batch_size":1,
+            "batch_size": 1,
             "max_tokens": 1024
         },
         "phi4": {
             "name": "Phi4",
             "model_name": "microsoft/Phi-4-multimodal-instruct",
-            "batch_size":1,
+            "batch_size": 1,
             "max_tokens": 1024
         },
         "deepseek": {
             "name": "DeepSeek",
             "model_name": "deepseek/deepseek-r1-0528:free",
-            "batch_size":1,
+            "batch_size": 1,
             "max_tokens": 1024
         },
         "gemma": {
             "name": "Gemma",
             "model_name": "google/gemma-3-12b-it",
-            "batch_size":1,
+            "batch_size": 1,
             "max_tokens": 1024
         },
         "gemma27": {
             "name": "Gemma27",
             "model_name": "",
-            "batch_size":3,
+            "batch_size": 3,
             "max_tokens": 1024
         },
         "qwenollama": {
             "name": "QwenOllama",
             "model_name": "qwen2.5vl:72b-fp16",
-            "batch_size":3,
+            "batch_size": 3,
             "max_tokens": 1024
         },
         "llava": {
             "name": "Llava34",
             "model_name": "",
-            "batch_size":2,
+            "batch_size": 2,
             "max_tokens": 1024
         },
         "blip": {
@@ -153,7 +153,6 @@
             "batch_size": 1,
             "max_tokens": 1024
         }
-
     },
     "input_file": "../MPDocVQA_filter_data_NEW.json",
     "output_file": "vqa_analysis_results.json",

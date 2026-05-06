@@ -84,7 +84,7 @@ class QwenVQAEvaluator:
             )
 
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_name, cache_dir="/data1/hf_cache/models", **model_kwargs
+            model_name, **model_kwargs
         ).eval()
 
         self.max_tokens = self.model_config.get("max_tokens", 1024)
@@ -245,7 +245,7 @@ class QwenVQAEvaluator:
 
     def _save_results(self, data):
         # Construct base path
-        base_path = f"/VQA_analysis/models/results/{self.config["dataset"]}/LLM"
+        base_path = f"VQA_analysis/models/results/{self.config["dataset"]}/LLM"
 
         # Get window size from config
         window_size = self.model_config.get("batch_size", 1)

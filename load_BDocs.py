@@ -16,7 +16,7 @@ dataset = load_dataset("letxbe/BoundingDocs", split="train", trust_remote_code=T
 
 # Use a sample for testing, or full dataset: dataset
 # Language filtering is now handled during the flattening process below.
-small_dataset = dataset.select(range(10)) 
+small_dataset = dataset.select(range(130)) 
 
 flattened_data = []
 

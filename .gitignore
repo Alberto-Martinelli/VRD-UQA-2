@@ -8,13 +8,14 @@ data/
 data_sample/
 old_scripts/
 put_images_script.py
+put_images_script_for_verified.py
 next_steps/
 helper_scripts/
 
 MPDocVQA/
-DUDE_sample/
-SlideVQA_sample/
-BDocs_sample/
+DUDE/
+SlideVQA/
+BDocs/
 
 INFO.md 
 

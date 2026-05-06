@@ -8,7 +8,7 @@ print("\nDataset length:\n", len(dataset))
 
 import json
 
-small_dataset = dataset.select(range(18))
+small_dataset = dataset.select(range(300))
 
 # Create the wrapper structure
 output_data = {
