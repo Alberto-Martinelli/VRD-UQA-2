@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from tqdm import tqdm
 import logging
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # import google.generativeai as genai
 # from google import genai
@@ -15,8 +17,44 @@ import logging
 # max_tokens = 1024
 # print("Gemini model initialized successfully")
 
+classifier_components = None
+
+def load_classifier_model():
+    global classifier_components
+
+    if classifier_components is not None:
+        return classifier_components
+
+    model_id = "Qwen/Qwen3-32B"
+    max_new_tokens = 64
+    temperature = 0.0
+    enable_thinking = False
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype="auto",
+        device_map="auto",
+    ).eval()
+
+    generation_kwargs = {
+        "max_new_tokens": max_new_tokens,
+        "do_sample": temperature > 0,
+    }
+    if temperature > 0:
+        generation_kwargs["temperature"] = temperature
+
+    classifier_components = {
+        "model_id": model_id,
+        "tokenizer": tokenizer,
+        "model": model,
+        "generation_kwargs": generation_kwargs,
+        "enable_thinking": enable_thinking,
+    }
+    return classifier_components
 
 def classify_unanswerable_answer(answer):
+    classifier = load_classifier_model()
     prompt = (
         "I'm performing an evaluation test on the ability of different models to answer VQA questions from document images. "
         "The model could return different answers to determine if the answer is 'unable to determine' or not. "
@@ -31,11 +69,28 @@ def classify_unanswerable_answer(answer):
         f"The answer is: {answer} "
         "Please respond only with the original answer or 'unable to determine' only."
     )
-    response = model.generate_content([prompt])
-    result = response.text.strip()
-    # print(f"    Gemini response for answer '{answer}': {result}")
-    return result
 
+    messages = [{"role": "user", "content": prompt}]
+    text = classifier["tokenizer"].apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=classifier["enable_thinking"],
+    )
+    inputs = classifier["tokenizer"]([text], return_tensors="pt").to(
+        classifier["model"].device
+    )
+
+    with torch.inference_mode():
+        generated_ids = classifier["model"].generate(
+            **inputs, **classifier["generation_kwargs"]
+        )
+
+    generated_ids = generated_ids[:, inputs.input_ids.shape[1] :]
+    result = classifier["tokenizer"].batch_decode(
+        generated_ids, skip_special_tokens=True
+    )[0].strip()
+    return result
 
 def label_vqa_answers(input_file, output_file):
     """
@@ -120,7 +175,6 @@ def label_vqa_answers(input_file, output_file):
         json.dump(data, f, indent=2)
     print(f"Processed file saved to {output_file}")
 
-
 def process_all_folders():
     """
     Processes all JSON files in the results directory and its subdirectories.
@@ -165,7 +219,6 @@ def process_all_folders():
             except Exception as e:
                 print(f"Error processing {input_path}: {str(e)}")
                 continue
-
 
 if __name__ == "__main__":
     process_all_folders()
