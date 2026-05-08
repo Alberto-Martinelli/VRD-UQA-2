@@ -1,21 +1,22 @@
-import google.generativeai as genai
 import json
 import time
 import os
 from pathlib import Path
 from tqdm import tqdm
+import logging
 
+# import google.generativeai as genai
 # from google import genai
-genai.configure(api_key="")
+# genai.configure(api_key="")
 
-model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
-)
-max_tokens = 1024
-print("Gemini model initialized successfully")
+# model = genai.GenerativeModel(
+#     model_name="gemini-2.5-flash",
+# )
+# max_tokens = 1024
+# print("Gemini model initialized successfully")
 
 
-def unable_to_determine_answer(answer):
+def classify_unanswerable_answer(answer):
     prompt = (
         "I'm performing an evaluation test on the ability of different models to answer VQA questions from document images. "
         "The model could return different answers to determine if the answer is 'unable to determine' or not. "
@@ -36,7 +37,7 @@ def unable_to_determine_answer(answer):
     return result
 
 
-def process_vqa_file(input_file, output_file):
+def label_vqa_answers(input_file, output_file):
     """
     Reads a JSON file with VQA results, evaluates each answer using the Gemini model,
     and appends a new field 'answer_converted' for each answer with the evaluation result.
@@ -106,11 +107,11 @@ def process_vqa_file(input_file, output_file):
                     converted_answer = original_answer
                 # Finally, if none of the above, use Gemini to evaluate
                 else:
-                    converted_answer = unable_to_determine_answer(original_answer)
+                    converted_answer = classify_unanswerable_answer(original_answer)
                     time.sleep(0.5)
 
-                # print(f"Original answer: {original_answer}")
-                # print(f"Converted answer: {converted_answer}")
+                print(f"Original answer: {original_answer}")
+                print(f"Converted answer: {converted_answer}")
                 answer_obj["answer_converted"] = converted_answer
         q_index += 1
 
@@ -132,36 +133,38 @@ def process_all_folders():
         root_path = Path(root)
 
         # Only process if we're in an 'original' folder
-        if root_path.name == "original":
-            # Get parent directory (result_type folder)
-            parent_dir = root_path.parent
+        if root_path.name != "original":
+            continue
 
-            # Create 'converted' folder at the same level as 'original'
-            converted_dir = parent_dir / "converted"
-            converted_dir.mkdir(exist_ok=True)
+        # Get parent directory (result_type folder)
+        parent_dir = root_path.parent
 
-            # Process all JSON files in the original folder
-            json_files = [f for f in files if f.endswith(".json")]
-            for json_file in json_files:
-                input_path = root_path / json_file
-                output_filename = json_file.replace(".json", "_converted.json")
-                output_path = converted_dir / output_filename
+        # Create 'converted' folder at the same level as 'original'
+        converted_dir = parent_dir / "converted"
+        converted_dir.mkdir(exist_ok=True)
 
-                # Skip if the file has already been converted
-                if output_path.exists():
-                    print(f"Skipping already converted file: {output_path}")
-                    continue
-                
-                print(f"-"*100)
-                print(f"Processing: {input_path}")
-                print(f"Saving to: {output_path}")
+        # Process all JSON files in the 'original' folder
+        json_files = [f for f in files if f.endswith(".json")]
+        for json_file in json_files:
+            input_path = root_path / json_file
+            output_filename = json_file.replace(".json", "_converted.json")
+            output_path = converted_dir / output_filename
 
-                try:
-                    process_vqa_file(str(input_path), str(output_path))
-                    # print(f"Successfully processed: {input_path}")
-                except Exception as e:
-                    print(f"Error processing {input_path}: {str(e)}")
-                    continue
+            # Skip if the file has already been converted
+            if output_path.exists():
+                print(f"Skipping already converted file: {output_path}")
+                continue
+            
+            print(f"-"*100)
+            print(f"Processing: {input_path}")
+            print(f"Saving to: {output_path}")
+
+            try:
+                label_vqa_answers(str(input_path), str(output_path))
+                # print(f"Successfully processed: {input_path}")
+            except Exception as e:
+                print(f"Error processing {input_path}: {str(e)}")
+                continue
 
 
 if __name__ == "__main__":
