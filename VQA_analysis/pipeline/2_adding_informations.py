@@ -247,33 +247,61 @@ def process_all_folders():
     Files in an "original" folder are processed and the output is written into a sibling folder "converted".
     Files that have already been converted are skipped.
     """
-    script_dir = Path(__file__).parent
+    results_dir = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
 
-    for root, dirs, files in os.walk(script_dir):
+    print(f"{'='*100}")
+    print(f"Adding Informations — scanning for converted results under: {results_dir}")
+    if not results_dir.exists():
+        print(f"ERROR: Results directory does not exist: {results_dir}")
+        return
+    print(f"{'='*100}")
+
+    total_processed = 0
+    total_skipped = 0
+    total_errors = 0
+    found_any = False
+
+    for root, dirs, files in os.walk(results_dir):
         root_path = Path(root)
         if root_path.name == "converted":
+            found_any = True
             parent_dir = root_path.parent
             augmented_dir = parent_dir / "augmented"
             augmented_dir.mkdir(exist_ok=True)
 
             json_files = [f for f in files if f.endswith(".json")]
+            if not json_files:
+                print(f"No JSON files found in: {root_path}")
+                continue
+
             for json_file in json_files:
                 input_path = root_path / json_file
                 output_filename = json_file.replace(".json", "_augmented.json")
                 output_path = augmented_dir / output_filename
 
                 if output_path.exists():
-                    print(f"Skipping already converted file: {output_path}")
+                    print(f"Skipping (already augmented): {input_path.name}")
+                    total_skipped += 1
                     continue
 
-                print(f"Processing: {input_path}")
-                print(f"Saving to: {output_path}")
+                print(f"\n{'-'*100}")
+                print(f"Processing : {input_path}")
+                print(f"Output     : {output_path}")
                 try:
                     process_vqa_file(str(input_path), str(output_path))
-                    print(f"Successfully processed: {input_path}")
+                    total_processed += 1
+                    print(f"Done       : {output_path.name}")
                 except Exception as e:
-                    print(f"Error processing {input_path}: {e}")
+                    print(f"ERROR processing {input_path}: {e}")
+                    total_errors += 1
                     continue
+
+    if not found_any:
+        print(f"WARNING: No 'converted/' folders found under {results_dir} — nothing to augment.")
+
+    print(f"\n{'='*100}")
+    print(f"Adding Informations complete — processed: {total_processed}, skipped: {total_skipped}, errors: {total_errors}")
+    print(f"{'='*100}")
 
 
 if __name__ == "__main__":

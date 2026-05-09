@@ -1,5 +1,6 @@
 
 
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -967,7 +968,7 @@ class VQAAnalyzer:
             if el not in len_dict:
                 res_len[el] = 0
             else:
-                res_len[el] = len_dict[el] / counter_len[el] 
+                res_len[el] = len_dict[el] / counter_len[el] if counter_len[el] != 0 else 0
             if el not in len_dict_complexity_1:
                 res_len_complexity_1[el] = 0
             else:
@@ -1999,7 +2000,7 @@ def generate_analysis_report(dataset, images_path):
 
     report_data_by_window = {}
     combined_wrong_answer_correlations = []  # Combined correlation data from all models
-    base_path = Path(__file__).parent
+    base_path = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
     print(f"Base path: {base_path}")
 
     result_files = []
@@ -2010,13 +2011,12 @@ def generate_analysis_report(dataset, images_path):
         print(f"Warning: {dataset_path} is not a directory")
         return
 
-    for folder in dataset_path.iterdir():
-        # Skip if folder is not a directory
-        if not folder.is_dir():
-            continue
+    # Collect all result folders: check both dataset_path directly and one level deeper
+    # to handle layouts like MPDocVQA/results_w2_UNABLE/ and MPDocVQA/LLM/results_w2_UNABLE/
+    candidate_parents = [dataset_path] + [p for p in dataset_path.iterdir() if p.is_dir()]
+    result_folders = [p for parent in candidate_parents for p in parent.iterdir() if p.is_dir() and "results" in p.name]
 
-        if "results" not in folder.name:
-            continue
+    for folder in result_folders:
 
         # if folder.name != "results_w1":
         #     print(f"Skipping folder {folder.name}")
@@ -2048,6 +2048,7 @@ def generate_analysis_report(dataset, images_path):
         dict_QUR_PL_complexity_1 = {}
         dict_QUR_PL_complexity_2 = {}
         dict_QUR_PL_complexity_3 = {}
+        list_len = []
         dict_QUR_DED = {}
         dict_QUR_DED_complexity_1 = {}
         dict_QUR_DED_complexity_2 = {}
@@ -2083,7 +2084,7 @@ def generate_analysis_report(dataset, images_path):
         for result_file in folder_augmented.iterdir():
             print("-" * 100)
 
-            file_path = base_path / result_file
+            file_path = result_file
             if not file_path.exists():
                 print(f"Warning: File {result_file} not found, skipping...")
                 continue
@@ -2468,9 +2469,8 @@ def generate_analysis_report(dataset, images_path):
 
 
 if __name__ == "__main__":
-    generate_analysis_report(
-        dataset="DUDE_AAAI", 
-        images_path="/data2/dnapolitano/VQA/data/DUDE_train-val-test_binaries/images/train"
-        # dataset="MPDocVQA_AAAI", 
-        # images_path="/data2/dnapolitano/VQA/data/mpdocvqa/images"
-    )
+    parser = argparse.ArgumentParser(description="Generate VQA analysis report")
+    parser.add_argument("--dataset", type=str, default="MPDocVQA", help="Dataset name (must match the folder under models/results/)")
+    parser.add_argument("--images_path", type=str, default="needed_images_2", help="Path to the images directory")
+    args = parser.parse_args()
+    generate_analysis_report(dataset=args.dataset, images_path=args.images_path)

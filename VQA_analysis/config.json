@@ -156,7 +156,7 @@
             }
         }
     },
-    "input_file": "MPDocVQA_verified.json",
+    "input_file": "VQA_analysis/MPDocVQA_verified_sample.json",
     "dataset": "MPDocVQA",
     "output_file": "vqa_analysis_results.json",
     "sampling_percentage": 100,

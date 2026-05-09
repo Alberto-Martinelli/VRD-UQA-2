@@ -1,3 +1,11 @@
+"""
+Post-processes VQA result JSON files by normalising model answers that mean
+"unable to answer" into a canonical "unable to determine" string.
+
+Walks all 'original/' sub-folders under
+the pipeline directory and writes converted files into a sibling 'converted/'
+folder, skipping files that have already been processed.
+"""
 import json
 import time
 import os
@@ -102,6 +110,7 @@ def label_vqa_answers(input_file, output_file):
     with open(input_file, "r") as f:
         data = json.load(f)
 
+    print(f"Processing file: {input_file}")
     # Process each corrupted question
     q_index = 0
     for question in tqdm(data.get("corrupted_questions", [])):
@@ -165,8 +174,8 @@ def label_vqa_answers(input_file, output_file):
                     converted_answer = classify_unanswerable_answer(original_answer)
                     time.sleep(0.5)
 
-                print(f"Original answer: {original_answer}")
-                print(f"Converted answer: {converted_answer}")
+                # print(f"Original answer: {original_answer}")
+                # print(f"Converted answer: {converted_answer}")
                 answer_obj["answer_converted"] = converted_answer
         q_index += 1
 
@@ -180,14 +189,34 @@ def process_all_folders():
     Processes all JSON files in the results directory and its subdirectories.
     Skips files that have already been converted.
     """
-    script_dir = Path(__file__).parent
+    # Results are written by the evaluators under VQA_analysis/models/results/,
+    # which is relative to the project root (two levels above this file).
+    results_dir = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
+
+    print(f"{'='*100}")
+    print(f"Unable Converter — scanning for results under: {results_dir}")
+    if not results_dir.exists():
+        print(f"ERROR: Results directory does not exist: {results_dir}")
+        return
+    print(f"{'='*100}")
+
+    total_processed = 0
+    total_skipped = 0
+    total_errors = 0
 
     # Walk through all subdirectories
-    for root, dirs, files in os.walk(script_dir):
+    found_any = False
+    for root, dirs, files in os.walk(results_dir):
         root_path = Path(root)
 
         # Only process if we're in an 'original' folder
         if root_path.name != "original":
+            continue
+
+        found_any = True
+        json_files = [f for f in files if f.endswith(".json")]
+        if not json_files:
+            print(f"No JSON files found in: {root_path}")
             continue
 
         # Get parent directory (result_type folder)
@@ -197,8 +226,6 @@ def process_all_folders():
         converted_dir = parent_dir / "converted"
         converted_dir.mkdir(exist_ok=True)
 
-        # Process all JSON files in the 'original' folder
-        json_files = [f for f in files if f.endswith(".json")]
         for json_file in json_files:
             input_path = root_path / json_file
             output_filename = json_file.replace(".json", "_converted.json")
@@ -206,19 +233,28 @@ def process_all_folders():
 
             # Skip if the file has already been converted
             if output_path.exists():
-                print(f"Skipping already converted file: {output_path}")
+                print(f"Skipping (already converted): {input_path.name}")
+                total_skipped += 1
                 continue
-            
-            print(f"-"*100)
-            print(f"Processing: {input_path}")
-            print(f"Saving to: {output_path}")
 
+            print(f"\n{'-'*100}")
+            print(f"Processing : {input_path}")
+            print(f"Output     : {output_path}")
             try:
                 label_vqa_answers(str(input_path), str(output_path))
-                # print(f"Successfully processed: {input_path}")
+                total_processed += 1
+                print(f"Done       : {output_path.name}")
             except Exception as e:
-                print(f"Error processing {input_path}: {str(e)}")
+                print(f"ERROR processing {input_path}: {str(e)}")
+                total_errors += 1
                 continue
+
+    if not found_any:
+        print(f"WARNING: No 'original/' folders found under {results_dir} — nothing to convert.")
+
+    print(f"\n{'='*100}")
+    print(f"Unable Converter complete — processed: {total_processed}, skipped: {total_skipped}, errors: {total_errors}")
+    print(f"{'='*100}")
 
 if __name__ == "__main__":
     process_all_folders()
