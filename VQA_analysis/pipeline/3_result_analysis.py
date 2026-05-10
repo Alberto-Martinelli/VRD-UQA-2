@@ -1992,6 +1992,19 @@ class VQAAnalyzer:
         ]
     
 
+def save_metric(folder, name, data, index, complexity_data=None):
+    """Save one metric to CSV. If complexity_data is provided (list of 3 dicts),
+    also saves _complexity_1/2/3 variants with the same index."""
+    df = pd.DataFrame(data)
+    df.index = index
+    df.to_csv(folder / f"{name}.csv")
+    if complexity_data:
+        for i, c_data in enumerate(complexity_data, start=1):
+            df_c = pd.DataFrame(c_data)
+            df_c.index = index
+            df_c.to_csv(folder / f"{name}_complexity_{i}.csv")
+
+
 def generate_analysis_report(dataset, images_path):
     # Group results by window size (e.g., "w=1" and "w=2")
     print("Initializing Entity Verifier...")
@@ -2008,7 +2021,7 @@ def generate_analysis_report(dataset, images_path):
 
     # Only process if dataset_path is a directory
     if not dataset_path.is_dir():
-        print(f"Warning: {dataset_path} is not a directory")
+        print(f"ERROR: {dataset_path} is not a directory")
         return
 
     # Collect all result folders: check both dataset_path directly and one level deeper
@@ -2117,8 +2130,6 @@ def generate_analysis_report(dataset, images_path):
                 # print(f"- Metrics -")
 
                 for key, value in metrics.items():
-                    
-
                     if key == "QUR":
                         # print(f"Processing QUR")
                         (
@@ -2316,148 +2327,20 @@ def generate_analysis_report(dataset, images_path):
         print(f"Saving files")
         print(f"Processed models: {processed_models}")
 
-        df_QUR = pd.DataFrame(dict_QUR)
-        df_QUR.index = ["QUR", "QUR_C1", "QUR_C2", "QUR_C3", "QUR_weighted"]
-        df_QUR.to_csv(folder_results / "QUR.csv")
-
-        df_QUR_DE = pd.DataFrame(dict_QUR_DE)
-        df_QUR_DE.index = LAYOUT_TYPES
-        df_QUR_DE.to_csv(folder_results / "QUR_DE.csv")
-        df_QUR_DE_complexity_1 = pd.DataFrame(dict_QUR_DE_complexity_1)
-        df_QUR_DE_complexity_1.index = LAYOUT_TYPES
-        df_QUR_DE_complexity_1.to_csv(folder_results / "QUR_DE_complexity_1.csv")
-        df_QUR_DE_complexity_2 = pd.DataFrame(dict_QUR_DE_complexity_2)
-        df_QUR_DE_complexity_2.index = LAYOUT_TYPES
-        df_QUR_DE_complexity_2.to_csv(folder_results / "QUR_DE_complexity_2.csv")
-        df_QUR_DE_complexity_3 = pd.DataFrame(dict_QUR_DE_complexity_3)
-        df_QUR_DE_complexity_3.index = LAYOUT_TYPES
-        df_QUR_DE_complexity_3.to_csv(folder_results / "QUR_DE_complexity_3.csv")
-
-        df_QUR_NLPE = pd.DataFrame(dict_QUR_NLPE)
-        df_QUR_NLPE.index = MACRO_ENTITY_TYPES
-        df_QUR_NLPE.to_csv(folder_results / "QUR_NLPE.csv")
-        df_QUR_NLPE_complexity_1 = pd.DataFrame(dict_QUR_NLPE_complexity_1)
-        df_QUR_NLPE_complexity_1.index = MACRO_ENTITY_TYPES
-        df_QUR_NLPE_complexity_1.to_csv(folder_results / "QUR_NLPE_complexity_1.csv")
-        df_QUR_NLPE_complexity_2 = pd.DataFrame(dict_QUR_NLPE_complexity_2)
-        df_QUR_NLPE_complexity_2.index = MACRO_ENTITY_TYPES
-        df_QUR_NLPE_complexity_2.to_csv(folder_results / "QUR_NLPE_complexity_2.csv")
-        df_QUR_NLPE_complexity_3 = pd.DataFrame(dict_QUR_NLPE_complexity_3)
-        df_QUR_NLPE_complexity_3.index = MACRO_ENTITY_TYPES
-        df_QUR_NLPE_complexity_3.to_csv(folder_results / "QUR_NLPE_complexity_3.csv")
-
-        df_QUR_QP = pd.DataFrame(dict_QUR_QP)
-        df_QUR_QP.index = PAGE_LAYOUT
-        df_QUR_QP.to_csv(folder_results / "QUR_QP.csv")
-        df_QUR_QP_complexity_1 = pd.DataFrame(dict_QUR_QP_complexity_1)
-        df_QUR_QP_complexity_1.index = PAGE_LAYOUT
-        df_QUR_QP_complexity_1.to_csv(folder_results / "QUR_QP_complexity_1.csv")
-        df_QUR_QP_complexity_2 = pd.DataFrame(dict_QUR_QP_complexity_2)
-        df_QUR_QP_complexity_2.index = PAGE_LAYOUT
-        df_QUR_QP_complexity_2.to_csv(folder_results / "QUR_QP_complexity_2.csv")
-        df_QUR_QP_complexity_3 = pd.DataFrame(dict_QUR_QP_complexity_3)
-        df_QUR_QP_complexity_3.index = PAGE_LAYOUT
-        df_QUR_QP_complexity_3.to_csv(folder_results / "QUR_QP_complexity_3.csv")
-
-        df_QUR_PL = pd.DataFrame(dict_QUR_PL)
-        df_QUR_PL.index = list_len
-        df_QUR_PL.to_csv(folder_results / "QUR_PL.csv")
-        df_QUR_PL_complexity_1 = pd.DataFrame(dict_QUR_PL_complexity_1)
-        df_QUR_PL_complexity_1.index = list_len
-        df_QUR_PL_complexity_1.to_csv(folder_results / "QUR_PL_complexity_1.csv")
-        df_QUR_PL_complexity_2 = pd.DataFrame(dict_QUR_PL_complexity_2)
-        df_QUR_PL_complexity_2.index = list_len
-        df_QUR_PL_complexity_2.to_csv(folder_results / "QUR_PL_complexity_2.csv")
-        df_QUR_PL_complexity_3 = pd.DataFrame(dict_QUR_PL_complexity_3)
-        df_QUR_PL_complexity_3.index = list_len
-        df_QUR_PL_complexity_3.to_csv(folder_results / "QUR_PL_complexity_3.csv")
-
-        df_QUR_DED = pd.DataFrame(dict_QUR_DED)
-        df_QUR_DED.index = ["<15", "15-25", ">25"]
-        df_QUR_DED.to_csv(folder_results / "QUR_DED.csv")
-        df_QUR_DED_complexity_1 = pd.DataFrame(dict_QUR_DED_complexity_1)
-        df_QUR_DED_complexity_1.index = ["<15", "15-25", ">25"]
-        df_QUR_DED_complexity_1.to_csv(folder_results / "QUR_DED_complexity_1.csv")
-        df_QUR_DED_complexity_2 = pd.DataFrame(dict_QUR_DED_complexity_2)
-        df_QUR_DED_complexity_2.index = ["<15", "15-25", ">25"]
-        df_QUR_DED_complexity_2.to_csv(folder_results / "QUR_DED_complexity_2.csv")
-        df_QUR_DED_complexity_3 = pd.DataFrame(dict_QUR_DED_complexity_3)
-        df_QUR_DED_complexity_3.index = ["<15", "15-25", ">25"]
-        df_QUR_DED_complexity_3.to_csv(folder_results / "QUR_DED_complexity_3.csv")
-
-        df_UR = pd.DataFrame(dict_UR)
-        df_UR.index = ["UR", "UR_C1", "UR_C2", "UR_C3"]
-        df_UR.to_csv(folder_results / "UR.csv")
-
-        df_UR_DE = pd.DataFrame(dict_UR_DE)
-        df_UR_DE.index = LAYOUT_TYPES
-        df_UR_DE.to_csv(folder_results / "UR_DE.csv")
-        df_UR_DE_complexity_1 = pd.DataFrame(dict_UR_DE_complexity_1)
-        df_UR_DE_complexity_1.index = LAYOUT_TYPES
-        df_UR_DE_complexity_1.to_csv(folder_results / "UR_DE_complexity_1.csv")
-        df_UR_DE_complexity_2 = pd.DataFrame(dict_UR_DE_complexity_2)
-        df_UR_DE_complexity_2.index = LAYOUT_TYPES
-        df_UR_DE_complexity_2.to_csv(folder_results / "UR_DE_complexity_2.csv")
-        df_UR_DE_complexity_3 = pd.DataFrame(dict_UR_DE_complexity_3)
-        df_UR_DE_complexity_3.index = LAYOUT_TYPES
-        df_UR_DE_complexity_3.to_csv(folder_results / "UR_DE_complexity_3.csv")
-
-        df_UR_PAGE_inpage = pd.DataFrame(dict_UR_PAGE_inpage)
-        df_UR_PAGE_inpage.index = ["UR_inpage", "UR_inpage_C1", "UR_inpage_C2", "UR_inpage_C3"]
-        df_UR_PAGE_inpage.to_csv(folder_results / "UR_PAGE_inpage.csv")
-        df_UR_PAGE_outpage = pd.DataFrame(dict_UR_PAGE_outpage)
-        df_UR_PAGE_outpage.index = ["UR_outpage", "UR_outpage_C1", "UR_outpage_C2", "UR_outpage_C3"]
-        df_UR_PAGE_outpage.to_csv(folder_results / "UR_PAGE_outpage.csv")
-
-        df_UR_PAGE_DE = pd.DataFrame(dict_UR_PAGE_DE)
-        df_UR_PAGE_DE.index = LAYOUT_TYPES
-        df_UR_PAGE_DE.to_csv(folder_results / "UR_PAGE_DE.csv")
-        df_UR_PAGE_DE_complexity_1 = pd.DataFrame(dict_UR_PAGE_DE_complexity_1)
-        df_UR_PAGE_DE_complexity_1.index = LAYOUT_TYPES
-        df_UR_PAGE_DE_complexity_1.to_csv(folder_results / "UR_PAGE_DE_complexity_1.csv")
-        df_UR_PAGE_DE_complexity_2 = pd.DataFrame(dict_UR_PAGE_DE_complexity_2) 
-        df_UR_PAGE_DE_complexity_2.index = LAYOUT_TYPES
-        df_UR_PAGE_DE_complexity_2.to_csv(folder_results / "UR_PAGE_DE_complexity_2.csv")
-        df_UR_PAGE_DE_complexity_3 = pd.DataFrame(dict_UR_PAGE_DE_complexity_3)
-        df_UR_PAGE_DE_complexity_3.index = LAYOUT_TYPES
-        df_UR_PAGE_DE_complexity_3.to_csv(folder_results / "UR_PAGE_DE_complexity_3.csv")
-        df_UR_NLPE = pd.DataFrame(dict_UR_NLPE)
-        df_UR_NLPE.index = MACRO_ENTITY_TYPES
-        df_UR_NLPE.to_csv(folder_results / "UR_NLPE.csv")
-        df_UR_NLPE_complexity_1 = pd.DataFrame(dict_UR_NLPE_complexity_1)
-        df_UR_NLPE_complexity_1.index = MACRO_ENTITY_TYPES
-        df_UR_NLPE_complexity_1.to_csv(folder_results / "UR_NLPE_complexity_1.csv")
-        df_UR_NLPE_complexity_2 = pd.DataFrame(dict_UR_NLPE_complexity_2)
-        df_UR_NLPE_complexity_2.index = MACRO_ENTITY_TYPES
-        df_UR_NLPE_complexity_2.to_csv(folder_results / "UR_NLPE_complexity_2.csv")
-        df_UR_NLPE_complexity_3 = pd.DataFrame(dict_UR_NLPE_complexity_3)
-        df_UR_NLPE_complexity_3.index = MACRO_ENTITY_TYPES
-        df_UR_NLPE_complexity_3.to_csv(folder_results / "UR_NLPE_complexity_3.csv")
-        df_UR_PAGE_QP = pd.DataFrame(dict_UR_PAGE_QP)
-        df_UR_PAGE_QP.index = PAGE_LAYOUT
-        df_UR_PAGE_QP.to_csv(folder_results / "UR_PAGE_QP.csv")
-        df_UR_PAGE_QP_complexity_1 = pd.DataFrame(dict_UR_PAGE_QP_complexity_1)
-        df_UR_PAGE_QP_complexity_1.index = PAGE_LAYOUT
-        df_UR_PAGE_QP_complexity_1.to_csv(folder_results / "UR_PAGE_QP_complexity_1.csv")
-        df_UR_PAGE_QP_complexity_2 = pd.DataFrame(dict_UR_PAGE_QP_complexity_2)
-        df_UR_PAGE_QP_complexity_2.index = PAGE_LAYOUT
-        df_UR_PAGE_QP_complexity_2.to_csv(folder_results / "UR_PAGE_QP_complexity_2.csv")
-        df_UR_PAGE_QP_complexity_3 = pd.DataFrame(dict_UR_PAGE_QP_complexity_3)
-        df_UR_PAGE_QP_complexity_3.index = PAGE_LAYOUT
-        df_UR_PAGE_QP_complexity_3.to_csv(folder_results / "UR_PAGE_QP_complexity_3.csv")
-
-        df_UR_PAGE_DED = pd.DataFrame(dict_UR_PAGE_DED)
-        df_UR_PAGE_DED.index = ["0", "1", ">1"]
-        df_UR_PAGE_DED.to_csv(folder_results / "UR_PAGE_DED.csv")
-        df_UR_PAGE_DED_complexity_1 = pd.DataFrame(dict_UR_PAGE_DED_complexity_1)
-        df_UR_PAGE_DED_complexity_1.index = ["0", "1", ">1"]
-        df_UR_PAGE_DED_complexity_1.to_csv(folder_results / "UR_PAGE_DED_complexity_1.csv")
-        df_UR_PAGE_DED_complexity_2 = pd.DataFrame(dict_UR_PAGE_DED_complexity_2)
-        df_UR_PAGE_DED_complexity_2.index = ["0", "1", ">1"]
-        df_UR_PAGE_DED_complexity_2.to_csv(folder_results / "UR_PAGE_DED_complexity_2.csv")
-        df_UR_PAGE_DED_complexity_3 = pd.DataFrame(dict_UR_PAGE_DED_complexity_3)
-        df_UR_PAGE_DED_complexity_3.index = ["0", "1", ">1"]
-        df_UR_PAGE_DED_complexity_3.to_csv(folder_results / "UR_PAGE_DED_complexity_3.csv")
+        save_metric(folder_results, "QUR", dict_QUR, ["QUR", "QUR_C1", "QUR_C2", "QUR_C3", "QUR_weighted"])
+        save_metric(folder_results, "QUR_DE", dict_QUR_DE, LAYOUT_TYPES, [dict_QUR_DE_complexity_1, dict_QUR_DE_complexity_2, dict_QUR_DE_complexity_3])
+        save_metric(folder_results, "QUR_NLPE", dict_QUR_NLPE, MACRO_ENTITY_TYPES, [dict_QUR_NLPE_complexity_1, dict_QUR_NLPE_complexity_2, dict_QUR_NLPE_complexity_3])
+        save_metric(folder_results, "QUR_QP", dict_QUR_QP, PAGE_LAYOUT, [dict_QUR_QP_complexity_1, dict_QUR_QP_complexity_2, dict_QUR_QP_complexity_3])
+        save_metric(folder_results, "QUR_PL", dict_QUR_PL, list_len, [dict_QUR_PL_complexity_1, dict_QUR_PL_complexity_2, dict_QUR_PL_complexity_3])
+        save_metric(folder_results, "QUR_DED", dict_QUR_DED, ["<15", "15-25", ">25"], [dict_QUR_DED_complexity_1, dict_QUR_DED_complexity_2, dict_QUR_DED_complexity_3])
+        save_metric(folder_results, "UR", dict_UR, ["UR", "UR_C1", "UR_C2", "UR_C3"])
+        save_metric(folder_results, "UR_DE", dict_UR_DE, LAYOUT_TYPES, [dict_UR_DE_complexity_1, dict_UR_DE_complexity_2, dict_UR_DE_complexity_3])
+        save_metric(folder_results, "UR_PAGE_inpage", dict_UR_PAGE_inpage, ["UR_inpage", "UR_inpage_C1", "UR_inpage_C2", "UR_inpage_C3"])
+        save_metric(folder_results, "UR_PAGE_outpage", dict_UR_PAGE_outpage, ["UR_outpage", "UR_outpage_C1", "UR_outpage_C2", "UR_outpage_C3"])
+        save_metric(folder_results, "UR_PAGE_DE", dict_UR_PAGE_DE, LAYOUT_TYPES, [dict_UR_PAGE_DE_complexity_1, dict_UR_PAGE_DE_complexity_2, dict_UR_PAGE_DE_complexity_3])
+        save_metric(folder_results, "UR_NLPE", dict_UR_NLPE, MACRO_ENTITY_TYPES, [dict_UR_NLPE_complexity_1, dict_UR_NLPE_complexity_2, dict_UR_NLPE_complexity_3])
+        save_metric(folder_results, "UR_PAGE_QP", dict_UR_PAGE_QP, PAGE_LAYOUT, [dict_UR_PAGE_QP_complexity_1, dict_UR_PAGE_QP_complexity_2, dict_UR_PAGE_QP_complexity_3])
+        save_metric(folder_results, "UR_PAGE_DED", dict_UR_PAGE_DED, ["0", "1", ">1"], [dict_UR_PAGE_DED_complexity_1, dict_UR_PAGE_DED_complexity_2, dict_UR_PAGE_DED_complexity_3])
         
         
         print(f"Files saved in {folder_results}")
