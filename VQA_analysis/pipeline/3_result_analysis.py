@@ -236,6 +236,86 @@ class VQAAnalyzer:
         self.entity_identifier = entity_verifier
         self.dataset = dataset
         self.images_path = images_path
+        # Pre-filter once so every metric method iterates only valid corrupted results.
+        self.valid_results = [
+            r for r in results
+            if r["is_corrupted"]
+            and "verification_result" in r
+            and "vqa_results" in r["verification_result"]
+            and len(r["verification_result"]["vqa_results"]) > 0
+        ]
+
+    # ------------------------------------------------------------------ helpers
+
+    @staticmethod
+    def _get_answers(res):
+        """Return the list of answer dicts for a valid result."""
+        vqa_result = res["verification_result"]["vqa_results"][0]
+        return vqa_result.get("answers", vqa_result.get("answer", []))
+
+    @staticmethod
+    def _unique_entities(corrupted_entities):
+        """Return corrupted_entities deduplicated by text."""
+        seen = []
+        unique = []
+        for entity in corrupted_entities:
+            if entity["text"] not in seen:
+                seen.append(entity["text"])
+                unique.append(entity)
+        return unique
+
+    @staticmethod
+    def _count_by_complexity(complexity, c1, c2, c3, amount=1):
+        """Increment the counter matching this result's complexity level."""
+        if complexity == 1:
+            c1 += amount
+        elif complexity == 2:
+            c2 += amount
+        elif complexity == 3:
+            c3 += amount
+        return c1, c2, c3
+
+    @staticmethod
+    def _normalize_sliced(hit, counter, hit_c1, counter_c1, hit_c2, counter_c2, hit_c3, counter_c3):
+        """Divide hit counts by their counters for each key and each complexity level.
+        Returns four dicts: (total, c1, c2, c3)."""
+        def _div(h, c):
+            return {k: h[k] / c[k] if c[k] != 0 else 0 for k in h}
+        return _div(hit, counter), _div(hit_c1, counter_c1), _div(hit_c2, counter_c2), _div(hit_c3, counter_c3)
+
+    @staticmethod
+    def _bbox_quadrant(bbox, avg_x, avg_y):
+        """Return the PAGE_LAYOUT quadrant label for a bounding box."""
+        cx = (bbox[0] + bbox[2]) / 2
+        cy = (bbox[1] + bbox[3]) / 2
+        if cx < avg_x / 2 and cy < avg_y / 2:
+            return "TOP_LEFT"
+        elif cx < avg_x / 2:
+            return "BOTTOM_LEFT"
+        elif cy < avg_y / 2:
+            return "TOP_RIGHT"
+        else:
+            return "BOTTOM_RIGHT"
+
+    @staticmethod
+    def _page_dimensions(pages):
+        """Return (avg_x, avg_y) pixel size across a list of page image paths."""
+        avg_x = avg_y = 0
+        for page in pages:
+            if "data1" in page:
+                page = page.replace("data1", "data2")
+            x, y = Image.open(page).size
+            avg_x += x
+            avg_y += y
+        avg_x /= len(pages)
+        avg_y /= len(pages)
+        return avg_x, avg_y
+
+    @staticmethod
+    def _is_unable(ans):
+        return ans.get("answer_converted", "").lower() == "unable to determine"
+
+    # ------------------------------------------------------------------ metrics
 
     def calculate_metrics(self):
         metrics = {
@@ -256,1741 +336,523 @@ class VQAAnalyzer:
         return metrics
 
     def QUR(self):
-        # print("QUR")
-        correct_unable = 0
-        correct_unable_complexity_1 = 0
-        correct_unable_complexity_2 = 0
-        correct_unable_complexity_3 = 0
-        total_corrupted = 0
-        total_corrupted_complexity_1 = 0
-        total_corrupted_complexity_2 = 0
-        total_corrupted_complexity_3 = 0
+        # QUR = fraction of corrupted questions where ALL pages answered "unable to determine"
+        correct = correct_c1 = correct_c2 = correct_c3 = 0
+        total = total_c1 = total_c2 = total_c3 = 0
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                
-                # Get all answers for this question
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                # print(len(all_answers))
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
 
-                complexity = res["complexity"]
+            total += 1
+            total_c1, total_c2, total_c3 = self._count_by_complexity(complexity, total_c1, total_c2, total_c3)
 
-                total_corrupted += 1
-                if complexity == 1:
-                    total_corrupted_complexity_1 += 1
-                if complexity == 2:
-                    total_corrupted_complexity_2 += 1
-                if complexity == 3: 
-                    total_corrupted_complexity_3 += 1
+            unable = sum(1 for a in all_answers if self._is_unable(a))
+            n = len(all_answers)
 
-                unable_count = 0
-                unable_count_complexity_1 = 0
-                unable_count_complexity_2 = 0
-                unable_count_complexity_3 = 0
-                tot_ans = 0
-                tot_ans_complexity_1 = 0
-                tot_ans_complexity_2 = 0
-                tot_ans_complexity_3 = 0
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        unable_count += 1
-                        if complexity == 1:
-                            unable_count_complexity_1 += 1
-                        if complexity == 2:
-                            unable_count_complexity_2 += 1
-                        if complexity == 3:
-                            unable_count_complexity_3 += 1
-
-                    tot_ans += 1
-                    if complexity == 1:
-                        tot_ans_complexity_1 += 1
-                    if complexity == 2:
-                        tot_ans_complexity_2 += 1
-                    if complexity == 3:
-                        tot_ans_complexity_3 += 1
-
-                # If majority of answers are "unable to determine", count this as correct
-                if tot_ans > 0 and unable_count / tot_ans == 1:
-                    correct_unable += 1
-
-                if (tot_ans_complexity_1 > 0 and unable_count_complexity_1 / tot_ans_complexity_1 == 1):
-                    correct_unable_complexity_1 += 1
-
-                if (tot_ans_complexity_2 > 0 and unable_count_complexity_2 / tot_ans_complexity_2 == 1):
-                    correct_unable_complexity_2 += 1
-
-                if (tot_ans_complexity_3 > 0 and unable_count_complexity_3 / tot_ans_complexity_3 == 1):
-                    correct_unable_complexity_3 += 1
+            if n > 0 and unable == n:
+                correct += 1
+                correct_c1, correct_c2, correct_c3 = self._count_by_complexity(
+                    complexity, correct_c1, correct_c2, correct_c3
+                )
 
         if self.debug:
-            print(f"Total corrupted questions: {total_corrupted}")
-            print(total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3)
-            print(f"Correct unable to determine: {correct_unable} ({(correct_unable/total_corrupted)*100:.2f}%)")
-            print(f"Correct unable to determine (Complexity 1): {correct_unable_complexity_1} ({(correct_unable_complexity_1/total_corrupted)*100:.2f}%)")
-            print(f"Correct unable to determine (Complexity 2): {correct_unable_complexity_2} ({(correct_unable_complexity_2/total_corrupted)*100:.2f}%)")
-            print(f"Correct unable to determine (Complexity 3): {correct_unable_complexity_3} ({(correct_unable_complexity_3/total_corrupted)*100:.2f}%)")
-        
-        weighted_unable = 0 #(total_corrupted_complexity_1 * 1.0) / total_corrupted
+            print(f"Total corrupted: {total} (c1={total_c1} c2={total_c2} c3={total_c3})")
+            print(f"Correct unable: {correct} ({correct/total*100:.2f}%)")
+
+        weighted_unable = 0  # placeholder, not used downstream
         return [
-            correct_unable / total_corrupted,
-            correct_unable_complexity_1 / total_corrupted_complexity_1,
-            correct_unable_complexity_2 / total_corrupted_complexity_2,
-            correct_unable_complexity_3 / total_corrupted_complexity_3,
-            weighted_unable
+            correct / total,
+            correct_c1 / total_c1 if total_c1 else 0,
+            correct_c2 / total_c2 if total_c2 else 0,
+            correct_c3 / total_c3 if total_c3 else 0,
+            weighted_unable,
         ]
 
 
     def QUR_DE(self):
-        # print("QUR_DE")
-        correct_unable = 0
-        correct_unable_complexity_1 = 0
-        correct_unable_complexity_2 = 0
-        correct_unable_complexity_3 = 0
-        total_corrupted = 0
-        total_corrupted_complexity_1 = 0
-        total_corrupted_complexity_2 = 0
-        total_corrupted_complexity_3 = 0
+        # QUR sliced by document element (layout) type of the corrupted entity
+        hit    = {el: 0 for el in LAYOUT_TYPES}
+        hit_c1 = {el: 0 for el in LAYOUT_TYPES}
+        hit_c2 = {el: 0 for el in LAYOUT_TYPES}
+        hit_c3 = {el: 0 for el in LAYOUT_TYPES}
+        cnt    = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c1 = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c2 = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c3 = {el: 0 for el in LAYOUT_TYPES}
 
-        layout_dict={el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_1={el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_2={el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_3={el:0 for el in LAYOUT_TYPES}
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            unique_ents = self._unique_entities(res["corrupted_entities"])
 
-        counter_layout = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_1 = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_2 = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_3 = {el:0 for el in LAYOUT_TYPES}
+            unable = sum(1 for a in all_answers if self._is_unable(a))
+            n = len(all_answers)
+            all_unable = n > 0 and unable == n
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                
-                # Get all answers for this question
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                # print(len(all_answers))
+            for el in unique_ents:
+                t = el["objectType"]
+                cnt[t] += 1
+                if complexity == 1: cnt_c1[t] += 1
+                elif complexity == 2: cnt_c2[t] += 1
+                elif complexity == 3: cnt_c3[t] += 1
+                if all_unable:
+                    hit[t] += 1
+                    if complexity == 1: hit_c1[t] += 1
+                    elif complexity == 2: hit_c2[t] += 1
+                    elif complexity == 3: hit_c3[t] += 1
 
-                complexity = res["complexity"]
-
-                total_corrupted += 1
-                if complexity == 1:
-                    total_corrupted_complexity_1 += 1
-                if complexity == 2:
-                    total_corrupted_complexity_2 += 1
-                if complexity == 3: 
-                    total_corrupted_complexity_3 += 1
-
-                corrupted_entities = res["corrupted_entities"]
-                unique_corrupted_entities = []
-
-                seen=[]
-                for entity in corrupted_entities:
-                    if entity["text"] not in seen:
-                        seen.append(entity["text"])
-                        unique_corrupted_entities.append(entity)
-                
-                for el in unique_corrupted_entities:
-                    counter_layout[el["objectType"]]+=1
-                    if complexity == 1:
-                        counter_layout_complexity_1[el["objectType"]]+=1
-                    if complexity == 2:
-                        counter_layout_complexity_2[el["objectType"]]+=1
-                    if complexity == 3:
-                        counter_layout_complexity_3[el["objectType"]]+=1
-
-
-                unable_count = 0
-                unable_count_complexity_1 = 0
-                unable_count_complexity_2 = 0
-                unable_count_complexity_3 = 0
-                tot_ans = 0
-                tot_ans_complexity_1 = 0
-                tot_ans_complexity_2 = 0
-                tot_ans_complexity_3 = 0
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        unable_count += 1
-                        if complexity == 1:
-                            unable_count_complexity_1 += 1
-                        if complexity == 2:
-                            unable_count_complexity_2 += 1
-                        if complexity == 3:
-                            unable_count_complexity_3 += 1
-
-                    tot_ans += 1
-                    if complexity == 1:
-                        tot_ans_complexity_1 += 1
-                    if complexity == 2:
-                        tot_ans_complexity_2 += 1
-                    if complexity == 3:
-                        tot_ans_complexity_3 += 1
-
-                # If majority of answers are "unable to determine", count this as correct
-                if tot_ans > 0 and unable_count / tot_ans == 1:
-                    correct_unable += 1
-                    for el in unique_corrupted_entities:
-                        layout_dict[el["objectType"]]+=1
-
-                if (tot_ans_complexity_1 > 0 and unable_count_complexity_1 / tot_ans_complexity_1 == 1):
-                    correct_unable_complexity_1 += 1
-                    for el in unique_corrupted_entities:
-                        layout_dict_complexity_1[el["objectType"]]+=1
-
-                if (tot_ans_complexity_2 > 0 and unable_count_complexity_2 / tot_ans_complexity_2 == 1):
-                    correct_unable_complexity_2 += 1
-                    for el in unique_corrupted_entities:
-                        layout_dict_complexity_2[el["objectType"]]+=1
-
-                if (tot_ans_complexity_3 > 0 and unable_count_complexity_3 / tot_ans_complexity_3 == 1):
-                    correct_unable_complexity_3 += 1
-                    for el in unique_corrupted_entities:
-                        layout_dict_complexity_3[el["objectType"]]+=1
-
-
-        # normalize the layout_dict wrt total_corrupted
-        res_layout = {}
-        res_layout_complexity_1 = {}
-        res_layout_complexity_2 = {}
-        res_layout_complexity_3 = {}
-        for el in layout_dict:
-            res_layout[el] = layout_dict[el] / counter_layout[el] if counter_layout[el] != 0 else 0
-            res_layout_complexity_1[el] = layout_dict_complexity_1[el] / counter_layout_complexity_1[el] if counter_layout_complexity_1[el] != 0 else 0
-            res_layout_complexity_2[el] = layout_dict_complexity_2[el] / counter_layout_complexity_2[el] if counter_layout_complexity_2[el] != 0 else 0
-            res_layout_complexity_3[el] = layout_dict_complexity_3[el] / counter_layout_complexity_3[el] if counter_layout_complexity_3[el] != 0 else 0
-
-        if self.debug:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in LAYOUT_TYPES:
-                print(f"{layout_dict[k]:.2f}\t{layout_dict_complexity_1[k]:.2f}\t{layout_dict_complexity_2[k]:.2f}\t{layout_dict_complexity_3[k]:.2f}")
-        
-
-        return [
-            res_layout,
-            res_layout_complexity_1,    
-            res_layout_complexity_2,
-            res_layout_complexity_3,
-        ]
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
     
     def QUR_QP(self):
-        # print("QUR_QP")
-        correct_unable = 0
-        correct_unable_complexity_1 = 0
-        correct_unable_complexity_2 = 0
-        correct_unable_complexity_3 = 0
-        total_corrupted = 0
-        total_corrupted_complexity_1 = 0
-        total_corrupted_complexity_2 = 0
-        total_corrupted_complexity_3 = 0
+        # QUR sliced by page quadrant (bounding-box position) of the corrupted entity
+        hit    = {el: 0 for el in PAGE_LAYOUT}
+        hit_c1 = {el: 0 for el in PAGE_LAYOUT}
+        hit_c2 = {el: 0 for el in PAGE_LAYOUT}
+        hit_c3 = {el: 0 for el in PAGE_LAYOUT}
+        cnt    = {el: 0 for el in PAGE_LAYOUT}
+        cnt_c1 = {el: 0 for el in PAGE_LAYOUT}
+        cnt_c2 = {el: 0 for el in PAGE_LAYOUT}
+        cnt_c3 = {el: 0 for el in PAGE_LAYOUT}
 
-        pos_dict={el:0 for el in PAGE_LAYOUT}
-        pos_dict_complexity_1={el:0 for el in PAGE_LAYOUT}
-        pos_dict_complexity_2={el:0 for el in PAGE_LAYOUT}
-        pos_dict_complexity_3={el:0 for el in PAGE_LAYOUT}
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
 
-        counter_pos = {el:0 for el in PAGE_LAYOUT}
-        counter_pos_complexity_1 = {el:0 for el in PAGE_LAYOUT}
-        counter_pos_complexity_2 = {el:0 for el in PAGE_LAYOUT}
-        counter_pos_complexity_3 = {el:0 for el in PAGE_LAYOUT}
+            unique_pages = list(set(p for a in all_answers for p in a.get("pages", [])))
+            avg_x, avg_y = self._page_dimensions(unique_pages)
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                
-                # Get all answers for this question
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                pages=[]
-                for ans in all_answers:
-                    pages.extend(ans.get("pages", []))
-                unique_pages = list(set(pages))
-                average_x_coord = 0
-                average_y_coord = 0
-                for page in unique_pages:
-                    #/data2/dnapolitano/VQA/data/DUDE_train-val-test_binaries/images
-                    if "data1" in page:
-                        page=page.replace("data1","data2")
-                    x_size, y_size = Image.open(page).size
-                    average_x_coord += x_size
-                    average_y_coord += y_size
-                average_x_coord /= len(unique_pages)
-                average_y_coord /= len(unique_pages)
+            unable = sum(1 for a in all_answers if self._is_unable(a))
+            n = len(all_answers)
+            all_unable = n > 0 and unable == n
 
-                complexity = res["complexity"]
+            for el in res["corrupted_entities"]:
+                q = self._bbox_quadrant(el.get("bbox", []), avg_x, avg_y)
+                cnt[q] += 1
+                if complexity == 1: cnt_c1[q] += 1
+                elif complexity == 2: cnt_c2[q] += 1
+                elif complexity == 3: cnt_c3[q] += 1
+                if all_unable:
+                    hit[q] += 1
+                    if complexity == 1: hit_c1[q] += 1
+                    elif complexity == 2: hit_c2[q] += 1
+                    elif complexity == 3: hit_c3[q] += 1
 
-                total_corrupted += 1
-                if complexity == 1:
-                    total_corrupted_complexity_1 += 1
-                if complexity == 2:
-                    total_corrupted_complexity_2 += 1
-                if complexity == 3: 
-                    total_corrupted_complexity_3 += 1
-
-                corrupted_entities = res["corrupted_entities"]
-                # print("Corrupted Entities",corrupted_entities)
-                # unique_corrupted_entities = []
-                
-                for el in corrupted_entities:
-                    corrupted_entity_bbox = el.get("bbox", [])
-                    bbox_center = [
-                        (corrupted_entity_bbox[0] + corrupted_entity_bbox[2]) / 2,
-                        (corrupted_entity_bbox[1] + corrupted_entity_bbox[3]) / 2
-                    ]
-                    if bbox_center[0] < average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                        counter_pos["TOP_LEFT"]+=1
-                        if complexity == 1:
-                            counter_pos_complexity_1["TOP_LEFT"]+=1
-                        if complexity == 2:
-                            counter_pos_complexity_2["TOP_LEFT"]+=1
-                        if complexity == 3:
-                            counter_pos_complexity_3["TOP_LEFT"]+=1
-                    elif bbox_center[0] < average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                        counter_pos["BOTTOM_LEFT"]+=1
-                        if complexity == 1:
-                            counter_pos_complexity_1["BOTTOM_LEFT"]+=1
-                        if complexity == 2:
-                            counter_pos_complexity_2["BOTTOM_LEFT"]+=1
-                        if complexity == 3:
-                            counter_pos_complexity_3["BOTTOM_LEFT"]+=1
-                    elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                        counter_pos["TOP_RIGHT"]+=1
-                        if complexity == 1:
-                            counter_pos_complexity_1["TOP_RIGHT"]+=1
-                        if complexity == 2:
-                            counter_pos_complexity_2["TOP_RIGHT"]+=1
-                        if complexity == 3:
-                            counter_pos_complexity_3["TOP_RIGHT"]+=1
-                    elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                        counter_pos["BOTTOM_RIGHT"]+=1
-                        if complexity == 1:
-                            counter_pos_complexity_1["BOTTOM_RIGHT"]+=1
-                        if complexity == 2:
-                            counter_pos_complexity_2["BOTTOM_RIGHT"]+=1
-                        if complexity == 3:
-                            counter_pos_complexity_3["BOTTOM_RIGHT"]+=1
-
-
-                                   
-
-                unable_count = 0
-                unable_count_complexity_1 = 0
-                unable_count_complexity_2 = 0
-                unable_count_complexity_3 = 0
-                tot_ans = 0
-                tot_ans_complexity_1 = 0
-                tot_ans_complexity_2 = 0
-                tot_ans_complexity_3 = 0
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        unable_count += 1
-                        if complexity == 1:
-                            unable_count_complexity_1 += 1
-                        if complexity == 2:
-                            unable_count_complexity_2 += 1
-                        if complexity == 3:
-                            unable_count_complexity_3 += 1
-
-                    tot_ans += 1
-                    if complexity == 1:
-                        tot_ans_complexity_1 += 1
-                    if complexity == 2:
-                        tot_ans_complexity_2 += 1
-                    if complexity == 3:
-                        tot_ans_complexity_3 += 1
-
-                # If majority of answers are "unable to determine", count this as correct
-                if tot_ans > 0 and unable_count / tot_ans == 1:
-                    correct_unable += 1
-                    for el in corrupted_entities:
-                        corrupted_entity_bbox = el.get("bbox", [])
-                        bbox_center = [
-                            (corrupted_entity_bbox[0] + corrupted_entity_bbox[2]) / 2,
-                            (corrupted_entity_bbox[1] + corrupted_entity_bbox[3]) / 2
-                        ]
-                        if bbox_center[0] < average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict["TOP_LEFT"]+=1
-                        elif bbox_center[0] < average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict["BOTTOM_LEFT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict["TOP_RIGHT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict["BOTTOM_RIGHT"]+=1
-
-                if (tot_ans_complexity_1 > 0 and unable_count_complexity_1 / tot_ans_complexity_1 == 1):
-                    correct_unable_complexity_1 += 1
-                    for el in corrupted_entities:
-                        corrupted_entity_bbox = el.get("bbox", [])
-                        bbox_center = [
-                            (corrupted_entity_bbox[0] + corrupted_entity_bbox[2]) / 2,
-                            (corrupted_entity_bbox[1] + corrupted_entity_bbox[3]) / 2
-                        ]
-                        if bbox_center[0] < average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict_complexity_1["TOP_LEFT"]+=1
-                        elif bbox_center[0] < average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict_complexity_1["BOTTOM_LEFT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict_complexity_1["TOP_RIGHT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict_complexity_1["BOTTOM_RIGHT"]+=1
-
-                if (tot_ans_complexity_2 > 0 and unable_count_complexity_2 / tot_ans_complexity_2 == 1):
-                    correct_unable_complexity_2 += 1
-                    for el in corrupted_entities:
-                        corrupted_entity_bbox = el.get("bbox", [])
-                        bbox_center = [
-                            (corrupted_entity_bbox[0] + corrupted_entity_bbox[2]) / 2,
-                            (corrupted_entity_bbox[1] + corrupted_entity_bbox[3]) / 2
-                        ]
-                        if bbox_center[0] < average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict_complexity_2["TOP_LEFT"]+=1
-                        elif bbox_center[0] < average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict_complexity_2["BOTTOM_LEFT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict_complexity_2["TOP_RIGHT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict_complexity_2["BOTTOM_RIGHT"]+=1
-
-                if (tot_ans_complexity_3 > 0 and unable_count_complexity_3 / tot_ans_complexity_3 == 1):
-                    correct_unable_complexity_3 += 1
-                    for el in corrupted_entities:
-                        corrupted_entity_bbox = el.get("bbox", [])
-                        bbox_center = [
-                            (corrupted_entity_bbox[0] + corrupted_entity_bbox[2]) / 2,
-                            (corrupted_entity_bbox[1] + corrupted_entity_bbox[3]) / 2
-                        ]
-                        if bbox_center[0] < average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict_complexity_3["TOP_LEFT"]+=1
-                        elif bbox_center[0] < average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict_complexity_3["BOTTOM_LEFT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                            pos_dict_complexity_3["TOP_RIGHT"]+=1
-                        elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                            pos_dict_complexity_3["BOTTOM_RIGHT"]+=1
-
-
-        res_pos = {}
-        res_pos_complexity_1 = {}
-        res_pos_complexity_2 = {}
-        res_pos_complexity_3 = {}
-        # print("Entity dict",entity_dict)
-        # print("Entity counter",counter_entity)
-        for el in pos_dict:
-            # print("Final",el)
-            res_pos[el] = pos_dict[el] / counter_pos[el] if counter_pos[el] != 0 else 0
-            res_pos_complexity_1[el] = pos_dict_complexity_1[el] / counter_pos_complexity_1[el] if counter_pos_complexity_1[el] != 0 else 0
-            res_pos_complexity_2[el] = pos_dict_complexity_2[el] / counter_pos_complexity_2[el] if counter_pos_complexity_2[el] != 0 else 0
-            res_pos_complexity_3[el] = pos_dict_complexity_3[el] / counter_pos_complexity_3[el] if counter_pos_complexity_3[el] != 0 else 0
-
-        if self.debug:
-        # if True:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in MACRO_ENTITY_TYPES:
-                print(f"{res_pos[k]:.2f}\t{res_pos_complexity_1[k]:.2f}\t{res_pos_complexity_2[k]:.2f}\t{res_pos_complexity_3[k]:.2f}")
-        
-
-        return [
-            res_pos,
-            res_pos_complexity_1,    
-            res_pos_complexity_2,
-            res_pos_complexity_3,
-        ]
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
     
 
     def QUR_NLPE(self):
-        # print("QUR_NLPE")
-        correct_unable = 0
-        correct_unable_complexity_1 = 0
-        correct_unable_complexity_2 = 0
-        correct_unable_complexity_3 = 0
-        total_corrupted = 0
-        total_corrupted_complexity_1 = 0
-        total_corrupted_complexity_2 = 0
-        total_corrupted_complexity_3 = 0
+        # QUR sliced by NLP entity type (NUMERIC, TEMPORAL, ENTITY, LOCATION, STRUCTURE)
+        hit    = {el: 0 for el in MACRO_ENTITY_TYPES}
+        hit_c1 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        hit_c2 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        hit_c3 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt    = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt_c1 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt_c2 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt_c3 = {el: 0 for el in MACRO_ENTITY_TYPES}
 
-        entity_dict={el:0 for el in MACRO_ENTITY_TYPES}
-        entity_dict_complexity_1={el:0 for el in MACRO_ENTITY_TYPES}
-        entity_dict_complexity_2={el:0 for el in MACRO_ENTITY_TYPES}
-        entity_dict_complexity_3={el:0 for el in MACRO_ENTITY_TYPES}
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            entity_types = res["entity_type"]
 
-        counter_entity = {el:0 for el in MACRO_ENTITY_TYPES}
-        counter_entity_complexity_1 = {el:0 for el in MACRO_ENTITY_TYPES}
-        counter_entity_complexity_2 = {el:0 for el in MACRO_ENTITY_TYPES}
-        counter_entity_complexity_3 = {el:0 for el in MACRO_ENTITY_TYPES}
+            unable = sum(1 for a in all_answers if self._is_unable(a))
+            n = len(all_answers)
+            all_unable = n > 0 and unable == n
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                
-                # Get all answers for this question
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                # print(len(all_answers))
+            for et in entity_types:
+                macro = MACRO_ENTITY_MAPPER[et]
+                cnt[macro] += 1
+                if complexity == 1: cnt_c1[macro] += 1
+                elif complexity == 2: cnt_c2[macro] += 1
+                elif complexity == 3: cnt_c3[macro] += 1
+                if all_unable:
+                    hit[macro] += 1
+                    if complexity == 1: hit_c1[macro] += 1
+                    elif complexity == 2: hit_c2[macro] += 1
+                    elif complexity == 3: hit_c3[macro] += 1
 
-                complexity = res["complexity"]
-
-                total_corrupted += 1
-                if complexity == 1:
-                    total_corrupted_complexity_1 += 1
-                if complexity == 2:
-                    total_corrupted_complexity_2 += 1
-                if complexity == 3: 
-                    total_corrupted_complexity_3 += 1
-
-                corrupted_entities = res["entity_type"]
-                # print("Corrupted Entities",corrupted_entities)
-                # unique_corrupted_entities = []
-                
-                for el in corrupted_entities:
-                    # print(el,MACRO_ENTITY_MAPPER[el])
-                    counter_entity[MACRO_ENTITY_MAPPER[el]]+=1
-                    if complexity == 1:
-                        counter_entity_complexity_1[MACRO_ENTITY_MAPPER[el]]+=1
-                    if complexity == 2:
-                        counter_entity_complexity_2[MACRO_ENTITY_MAPPER[el]]+=1
-                    if complexity == 3:
-                        counter_entity_complexity_3[MACRO_ENTITY_MAPPER[el]]+=1
-                                   
-
-                unable_count = 0
-                unable_count_complexity_1 = 0
-                unable_count_complexity_2 = 0
-                unable_count_complexity_3 = 0
-                tot_ans = 0
-                tot_ans_complexity_1 = 0
-                tot_ans_complexity_2 = 0
-                tot_ans_complexity_3 = 0
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        unable_count += 1
-                        if complexity == 1:
-                            unable_count_complexity_1 += 1
-                        if complexity == 2:
-                            unable_count_complexity_2 += 1
-                        if complexity == 3:
-                            unable_count_complexity_3 += 1
-
-                    tot_ans += 1
-                    if complexity == 1:
-                        tot_ans_complexity_1 += 1
-                    if complexity == 2:
-                        tot_ans_complexity_2 += 1
-                    if complexity == 3:
-                        tot_ans_complexity_3 += 1
-
-                # If majority of answers are "unable to determine", count this as correct
-                if tot_ans > 0 and unable_count / tot_ans == 1:
-                    correct_unable += 1
-                    for el in corrupted_entities:
-                        entity_dict[MACRO_ENTITY_MAPPER[el]]+=1
-
-                if (tot_ans_complexity_1 > 0 and unable_count_complexity_1 / tot_ans_complexity_1 == 1):
-                    correct_unable_complexity_1 += 1
-                    for el in corrupted_entities:
-                        entity_dict_complexity_1[MACRO_ENTITY_MAPPER[el]]+=1
-
-                if (tot_ans_complexity_2 > 0 and unable_count_complexity_2 / tot_ans_complexity_2 == 1):
-                    correct_unable_complexity_2 += 1
-                    for el in corrupted_entities:
-                        entity_dict_complexity_2[MACRO_ENTITY_MAPPER[el]]+=1
-
-                if (tot_ans_complexity_3 > 0 and unable_count_complexity_3 / tot_ans_complexity_3 == 1):
-                    correct_unable_complexity_3 += 1
-                    for el in corrupted_entities:
-                        entity_dict_complexity_3[MACRO_ENTITY_MAPPER[el]]+=1
-
-
-        res_entity = {}
-        res_entity_complexity_1 = {}
-        res_entity_complexity_2 = {}
-        res_entity_complexity_3 = {}
-        # print("Entity dict",entity_dict)
-        # print("Entity counter",counter_entity)
-        for el in entity_dict:
-            # print("Final",el)
-            res_entity[el] = entity_dict[el] / counter_entity[el] if counter_entity[el] != 0 else 0
-            res_entity_complexity_1[el] = entity_dict_complexity_1[el] / counter_entity_complexity_1[el] if counter_entity_complexity_1[el] != 0 else 0
-            res_entity_complexity_2[el] = entity_dict_complexity_2[el] / counter_entity_complexity_2[el] if counter_entity_complexity_2[el] != 0 else 0
-            res_entity_complexity_3[el] = entity_dict_complexity_3[el] / counter_entity_complexity_3[el] if counter_entity_complexity_3[el] != 0 else 0
-
-        if self.debug:
-        # if True:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in MACRO_ENTITY_TYPES:
-                print(f"{res_entity[k]:.2f}\t{res_entity_complexity_1[k]:.2f}\t{res_entity_complexity_2[k]:.2f}\t{res_entity_complexity_3[k]:.2f}")
-        
-
-        return [
-            res_entity,
-            res_entity_complexity_1,    
-            res_entity_complexity_2,
-            res_entity_complexity_3,
-        ]    
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
 
     def QUR_PL(self):
-        # print("QUR_PL")
-        correct_unable = 0
-        correct_unable_complexity_1 = 0
-        correct_unable_complexity_2 = 0
-        correct_unable_complexity_3 = 0
-        total_corrupted = 0
-        total_corrupted_complexity_1 = 0
-        total_corrupted_complexity_2 = 0
-        total_corrupted_complexity_3 = 0
+        # QUR sliced by page-length (number of unique pages seen across all answers).
+        # The page-count axis is dynamic, so dicts are keyed by num_pages rather than a fixed enum.
+        # list_len is returned alongside the metric dicts so callers can use it as a DataFrame index.
+        hit    = {}
+        hit_c1 = {}
+        hit_c2 = {}
+        hit_c3 = {}
+        cnt    = {}
+        cnt_c1 = {}
+        cnt_c2 = {}
+        cnt_c3 = {}
 
-        len_dict={}
-        len_dict_complexity_1={}
-        len_dict_complexity_2={}
-        len_dict_complexity_3={}
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
 
-        counter_len = {}
-        counter_len_complexity_1 = {}
-        counter_len_complexity_2 = {}
-        counter_len_complexity_3 = {}
+            num_pages = len(set(p for a in all_answers for p in a.get("pages", [])))
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                
-                # Get all answers for this question
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                pages=[]
-                for ans in all_answers:
-                    pages.extend(ans.get("pages", []))
-                unique_pages = list(set(pages))
-                num_pages = len(unique_pages)
+            # Initialise buckets on first encounter of this page count
+            for d in (cnt, cnt_c1, cnt_c2, cnt_c3, hit, hit_c1, hit_c2, hit_c3):
+                d.setdefault(num_pages, 0)
 
-                complexity = res["complexity"]
-                
-                if num_pages not in counter_len:
-                    counter_len[num_pages] = 0
-                    counter_len_complexity_1[num_pages] = 0
-                    counter_len_complexity_2[num_pages] = 0
-                    counter_len_complexity_3[num_pages] = 0
-                counter_len[num_pages] += 1
-                if complexity == 1:
-                    counter_len_complexity_1[num_pages] += 1
-                if complexity == 2:
-                    counter_len_complexity_2[num_pages] += 1
-                if complexity == 3:
-                    counter_len_complexity_3[num_pages] += 1
+            cnt[num_pages] += 1
+            if complexity == 1: cnt_c1[num_pages] += 1
+            elif complexity == 2: cnt_c2[num_pages] += 1
+            elif complexity == 3: cnt_c3[num_pages] += 1
 
+            unable = sum(1 for a in all_answers if self._is_unable(a))
+            n = len(all_answers)
+            all_unable = n > 0 and unable == n
 
+            if all_unable:
+                hit[num_pages] += 1
+                if complexity == 1: hit_c1[num_pages] += 1
+                elif complexity == 2: hit_c2[num_pages] += 1
+                elif complexity == 3: hit_c3[num_pages] += 1
 
-                total_corrupted += 1
-                if complexity == 1:
-                    total_corrupted_complexity_1 += 1
-                if complexity == 2:
-                    total_corrupted_complexity_2 += 1
-                if complexity == 3: 
-                    total_corrupted_complexity_3 += 1
-                                   
-
-                unable_count = 0
-                unable_count_complexity_1 = 0
-                unable_count_complexity_2 = 0
-                unable_count_complexity_3 = 0
-                tot_ans = 0
-                tot_ans_complexity_1 = 0
-                tot_ans_complexity_2 = 0
-                tot_ans_complexity_3 = 0
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        unable_count += 1
-                        if complexity == 1:
-                            unable_count_complexity_1 += 1
-                        if complexity == 2:
-                            unable_count_complexity_2 += 1
-                        if complexity == 3:
-                            unable_count_complexity_3 += 1
-
-                    tot_ans += 1
-                    if complexity == 1:
-                        tot_ans_complexity_1 += 1
-                    if complexity == 2:
-                        tot_ans_complexity_2 += 1
-                    if complexity == 3:
-                        tot_ans_complexity_3 += 1
-
-                # If majority of answers are "unable to determine", count this as correct
-                if tot_ans > 0 and unable_count / tot_ans == 1:
-                    correct_unable += 1
-                    len_dict[num_pages] = len_dict.get(num_pages, 0) + 1
-
-                if (tot_ans_complexity_1 > 0 and unable_count_complexity_1 / tot_ans_complexity_1 == 1):
-                    correct_unable_complexity_1 += 1
-                    len_dict_complexity_1[num_pages] = len_dict_complexity_1.get(num_pages, 0) + 1
-
-                if (tot_ans_complexity_2 > 0 and unable_count_complexity_2 / tot_ans_complexity_2 == 1):
-                    correct_unable_complexity_2 += 1
-                    len_dict_complexity_2[num_pages] = len_dict_complexity_2.get(num_pages, 0) + 1
-                    
-                if (tot_ans_complexity_3 > 0 and unable_count_complexity_3 / tot_ans_complexity_3 == 1):
-                    correct_unable_complexity_3 += 1
-                    len_dict_complexity_3[num_pages] = len_dict_complexity_3.get(num_pages, 0) + 1
-                        
-
-        res_len = {}
-        res_len_complexity_1 = {}
-        res_len_complexity_2 = {}
-        res_len_complexity_3 = {}
-        # print("Len dict",len_dict)
-        # print("Len counter",counter_len)
-        list_len = []
-        for el in counter_len:
-            list_len.append(el)
-            if el not in len_dict:
-                res_len[el] = 0
-            else:
-                res_len[el] = len_dict[el] / counter_len[el] if counter_len[el] != 0 else 0
-            if el not in len_dict_complexity_1:
-                res_len_complexity_1[el] = 0
-            else:
-                res_len_complexity_1[el] = len_dict_complexity_1[el] / counter_len_complexity_1[el] if counter_len_complexity_1[el] != 0 else 0
-            if el not in len_dict_complexity_2:
-                res_len_complexity_2[el] = 0
-            else:
-                res_len_complexity_2[el] = len_dict_complexity_2[el] / counter_len_complexity_2[el] if counter_len_complexity_2[el] != 0 else 0
-            if el not in len_dict_complexity_3:
-                res_len_complexity_3[el] = 0
-            else:
-                res_len_complexity_3[el] = len_dict_complexity_3[el] / counter_len_complexity_3[el] if counter_len_complexity_3[el] != 0 else 0
-        # print("Res dict",res_len)
-
-        if self.debug:
-        # if True:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in MACRO_ENTITY_TYPES:
-                print(f"{res_len[k]:.2f}\t{res_len_complexity_1[k]:.2f}\t{res_len_complexity_2[k]:.2f}\t{res_len_complexity_3[k]:.2f}")
-        
-
-        return [
-            res_len,
-            res_len_complexity_1,    
-            res_len_complexity_2,
-            res_len_complexity_3,
-            list_len
-        ]
+        list_len = sorted(cnt.keys())
+        res, res_c1, res_c2, res_c3 = self._normalize_sliced(
+            hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3
+        )
+        return [res, res_c1, res_c2, res_c3, list_len]
 
 
     def QUR_DED(self):
-        # print("QUR_DED")
-        correct_unable = 0
-        correct_unable_complexity_1 = 0
-        correct_unable_complexity_2 = 0
-        correct_unable_complexity_3 = 0
-        total_corrupted = 0
-        total_corrupted_complexity_1 = 0
-        total_corrupted_complexity_2 = 0
-        total_corrupted_complexity_3 = 0
+        # QUR sliced by document element density: fraction of layout objects that are visual
+        # (figures/tables/formulas). Buckets: <15%, 15–25%, >25%.
+        DED_BUCKETS = ["<15", "15-25", ">25"]
+        hit    = {k: 0 for k in DED_BUCKETS}
+        hit_c1 = {k: 0 for k in DED_BUCKETS}
+        hit_c2 = {k: 0 for k in DED_BUCKETS}
+        hit_c3 = {k: 0 for k in DED_BUCKETS}
+        cnt    = {k: 0 for k in DED_BUCKETS}
+        cnt_c1 = {k: 0 for k in DED_BUCKETS}
+        cnt_c2 = {k: 0 for k in DED_BUCKETS}
+        cnt_c3 = {k: 0 for k in DED_BUCKETS}
 
-        layout_dict={"<15":0, "15-25":0, ">25":0}
-        # print(layout_dict)
-        layout_dict_complexity_1={"<15":0, "15-25":0, ">25":0}
-        layout_dict_complexity_2={"<15":0, "15-25":0, ">25":0}
-        layout_dict_complexity_3={"<15":0, "15-25":0, ">25":0}
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
 
-        counter_layout = {"<15":0, "15-25":0, ">25":0}
-        counter_layout_complexity_1 = {"<15":0, "15-25":0, ">25":0}
-        counter_layout_complexity_2 = {"<15":0, "15-25":0, ">25":0}
-        counter_layout_complexity_3 = {"<15":0, "15-25":0, ">25":0}
+            doc_dist = {el: 0 for el in MACRO_LAYOUT_TYPES}
+            for page, info in res["layout_analysis"]["pages"].items():
+                for obj in info["layout_analysis"].values():
+                    doc_dist[MAPPER_LAYOUT_TYPES[obj["ObjectType"]]] += 1
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                complexity = res["complexity"]
-                # Get all answers for this question
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                
-                layout_doc = res["layout_analysis"]["pages"]
-
-                doc_dist = {el:0 for el in MACRO_LAYOUT_TYPES}
-                for page, info in layout_doc.items():
-                    layout_page=info["layout_analysis"]
-                    for objID, obj in layout_page.items():
-                        doc_dist[MAPPER_LAYOUT_TYPES[obj["ObjectType"]]]+=1
-
-                v1,v2=doc_dist.values()
-                if v1==0:
-                    v1=1
-                if v2/(v2+v1) < 0.15:
-                    key="<15"
-                    counter_layout["<15"]+=1
-                    if complexity == 1:
-                        counter_layout_complexity_1["<15"]+=1
-                    if complexity == 2:
-                        counter_layout_complexity_2["<15"]+=1
-                    if complexity == 3:
-                        counter_layout_complexity_3["<15"]+=1
-                elif v2/(v1+v2) < 0.25:
-                    key="15-25"
-                    counter_layout["15-25"]+=1
-                    if complexity == 1:
-                        counter_layout_complexity_1["15-25"]+=1
-                    if complexity == 2:
-                        counter_layout_complexity_2["15-25"]+=1
-                    if complexity == 3:
-                        counter_layout_complexity_3["15-25"]+=1
-                else:
-                    key=">25"
-                    counter_layout[">25"]+=1
-                    if complexity == 1:
-                        counter_layout_complexity_1[">25"]+=1
-                    if complexity == 2:
-                        counter_layout_complexity_2[">25"]+=1
-                    if complexity == 3:
-                        counter_layout_complexity_3[">25"]+=1
-
-                total_corrupted += 1
-                if complexity == 1:
-                    total_corrupted_complexity_1 += 1
-                if complexity == 2:
-                    total_corrupted_complexity_2 += 1
-                if complexity == 3: 
-                    total_corrupted_complexity_3 += 1
-
-                unable_count = 0
-                unable_count_complexity_1 = 0
-                unable_count_complexity_2 = 0
-                unable_count_complexity_3 = 0
-                tot_ans = 0
-                tot_ans_complexity_1 = 0
-                tot_ans_complexity_2 = 0
-                tot_ans_complexity_3 = 0
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        unable_count += 1
-                        if complexity == 1:
-                            unable_count_complexity_1 += 1
-                        if complexity == 2:
-                            unable_count_complexity_2 += 1
-                        if complexity == 3:
-                            unable_count_complexity_3 += 1
-
-                    tot_ans += 1
-                    if complexity == 1:
-                        tot_ans_complexity_1 += 1
-                    if complexity == 2:
-                        tot_ans_complexity_2 += 1
-                    if complexity == 3:
-                        tot_ans_complexity_3 += 1
-
-                # If majority of answers are "unable to determine", count this as correct
-                if tot_ans > 0 and unable_count / tot_ans == 1:
-                    correct_unable += 1
-                    layout_dict[key] = layout_dict.get(key, 0) + 1
-
-                if (tot_ans_complexity_1 > 0 and unable_count_complexity_1 / tot_ans_complexity_1 == 1):
-                    correct_unable_complexity_1 += 1
-                    layout_dict_complexity_1[key] = layout_dict_complexity_1.get(key, 0) + 1
-
-                if (tot_ans_complexity_2 > 0 and unable_count_complexity_2 / tot_ans_complexity_2 == 1):
-                    correct_unable_complexity_2 += 1
-                    layout_dict_complexity_2[key] = layout_dict_complexity_2.get(key, 0) + 1
-                    
-                if (tot_ans_complexity_3 > 0 and unable_count_complexity_3 / tot_ans_complexity_3 == 1):
-                    correct_unable_complexity_3 += 1
-                    layout_dict_complexity_3[key] = layout_dict_complexity_3.get(key, 0) + 1
-                        
-
-        res_lay = {}
-        res_lay_complexity_1 = {}
-        res_lay_complexity_2 = {}
-        res_lay_complexity_3 = {}
-        # print(len(counter_layout))
-        # print("COUNTER LAYOUT")
-        # for k,v in counter_layout.items():
-        #     print(k,v)
-        # list_len = []
-        for el in counter_layout:
-            if el not in layout_dict:
-                res_lay[el] = 0
+            text_count, vre_count = doc_dist["text"], doc_dist["vre"]
+            if text_count == 0:
+                text_count = 1  # avoid divide-by-zero when doc is purely visual
+            vre_ratio = vre_count / (vre_count + text_count)
+            if vre_ratio < 0.15:
+                key = "<15"
+            elif vre_ratio < 0.25:
+                key = "15-25"
             else:
-                res_lay[el] = layout_dict[el] / counter_layout[el] if counter_layout[el] != 0 else 0
-            
-            if el not in layout_dict_complexity_1:
-                res_lay_complexity_1[el] = 0
-            else:
-                res_lay_complexity_1[el] = layout_dict_complexity_1[el] / counter_layout_complexity_1[el] if counter_layout_complexity_1[el] != 0 else 0
-            
-            if el not in layout_dict_complexity_2:
-                res_lay_complexity_2[el] = 0
-            else:
-                res_lay_complexity_2[el] = layout_dict_complexity_2[el] / counter_layout_complexity_2[el] if counter_layout_complexity_2[el] != 0 else 0
-            
-            if el not in layout_dict_complexity_3:
-                res_lay_complexity_3[el] = 0
-            else:
-                res_lay_complexity_3[el] = layout_dict_complexity_3[el] / counter_layout_complexity_3[el] if counter_layout_complexity_3[el] != 0 else 0
-        # print("Res dict",res_lay)
+                key = ">25"
 
-        if self.debug:
-        # if True:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in counter_layout:
-                print(f"{res_lay[k]:.2f}\t{res_lay_complexity_1[k]:.2f}\t{res_lay_complexity_2[k]:.2f}\t{res_lay_complexity_3[k]:.2f}")
-        
+            cnt[key] += 1
+            if complexity == 1: cnt_c1[key] += 1
+            elif complexity == 2: cnt_c2[key] += 1
+            elif complexity == 3: cnt_c3[key] += 1
 
-        return [
-            res_lay,
-            res_lay_complexity_1,    
-            res_lay_complexity_2,
-            res_lay_complexity_3,
-        ]
-    
+            unable = sum(1 for a in all_answers if self._is_unable(a))
+            n = len(all_answers)
+            all_unable = n > 0 and unable == n
+
+            if all_unable:
+                hit[key] += 1
+                if complexity == 1: hit_c1[key] += 1
+                elif complexity == 2: hit_c2[key] += 1
+                elif complexity == 3: hit_c3[key] += 1
+
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
+
 
     def UR(self):
-        # print("UR")
-        total_answers = 0
-        total_answers_complexity_1 = 0
-        total_answers_complexity_2 = 0
-        total_answers_complexity_3 = 0
-        tot_unable_count = 0
-        tot_unable_count_complexity_1 = 0
-        tot_unable_count_complexity_2 = 0
-        tot_unable_count_complexity_3 = 0
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                complexity = res["complexity"]
+        # UR = fraction of individual page answers that are "unable to determine"
+        total = total_c1 = total_c2 = total_c3 = 0
+        unable = unable_c1 = unable_c2 = unable_c3 = 0
 
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        tot_unable_count += 1
-                        if complexity == 1:
-                            tot_unable_count_complexity_1 += 1
-                        if complexity == 2:
-                            tot_unable_count_complexity_2 += 1
-                        if complexity == 3:
-                            tot_unable_count_complexity_3 += 1
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
 
-                    total_answers += 1
-                    if complexity == 1:
-                        total_answers_complexity_1 += 1
-                    if complexity == 2:
-                        total_answers_complexity_2 += 1
-                    if complexity == 3:
-                        total_answers_complexity_3 += 1
+            for ans in all_answers:
+                total += 1
+                total_c1, total_c2, total_c3 = self._count_by_complexity(complexity, total_c1, total_c2, total_c3)
+                if self._is_unable(ans):
+                    unable += 1
+                    unable_c1, unable_c2, unable_c3 = self._count_by_complexity(complexity, unable_c1, unable_c2, unable_c3)
 
-        if self.debug:
-            print(f"Total answers: {total_answers}")
-            print(f"Unable to determine/errors: {tot_unable_count} ({(tot_unable_count/total_answers)*100:.2f}%)")
-            print(f"Total answers (Complexity 1): {total_answers_complexity_1}")
-            print(f"Unable to determine/errors (Complexity 1): {tot_unable_count_complexity_1} ({(tot_unable_count_complexity_1/total_answers_complexity_1)*100:.2f}%)")
-            print(f"Total answers (Complexity 2): {total_answers_complexity_2}")
-            print(f"Unable to determine/errors (Complexity 2): {tot_unable_count_complexity_2} ({(tot_unable_count_complexity_2/total_answers_complexity_2)*100:.2f}%)")
-            print(f"Total answers (Complexity 3): {total_answers_complexity_3}")
-            print(f"Unable to determine/errors (Complexity 3): {tot_unable_count_complexity_3} ({(tot_unable_count_complexity_3/total_answers_complexity_3)*100:.2f}%)")
-
-        if total_answers == 0:
+        if total == 0:
             return [0, 0, 0, 0]
-        v1 = 0
-        if total_answers_complexity_1 != 0:
-            v1 = tot_unable_count_complexity_1 / total_answers_complexity_1
-        v2 = 0
-        if total_answers_complexity_2 != 0:
-            v2 = tot_unable_count_complexity_2 / total_answers_complexity_2
-        v3 = 0
-        if total_answers_complexity_3 != 0:
-            v3 = tot_unable_count_complexity_3 / total_answers_complexity_3
-        return [tot_unable_count / total_answers, v1, v2, v3]
+        return [
+            unable / total,
+            unable_c1 / total_c1 if total_c1 else 0,
+            unable_c2 / total_c2 if total_c2 else 0,
+            unable_c3 / total_c3 if total_c3 else 0,
+        ]
 
 
     def UR_DE(self):
-        # print("UR_DE")
-        total_answers = 0
-        total_answers_complexity_1 = 0
-        total_answers_complexity_2 = 0
-        total_answers_complexity_3 = 0
-        tot_unable_count = 0
-        tot_unable_count_complexity_1 = 0
-        tot_unable_count_complexity_2 = 0
-        tot_unable_count_complexity_3 = 0
+        # UR sliced by document element type of the corrupted entity, measured per answer
+        hit    = {el: 0 for el in LAYOUT_TYPES}
+        hit_c1 = {el: 0 for el in LAYOUT_TYPES}
+        hit_c2 = {el: 0 for el in LAYOUT_TYPES}
+        hit_c3 = {el: 0 for el in LAYOUT_TYPES}
+        cnt    = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c1 = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c2 = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c3 = {el: 0 for el in LAYOUT_TYPES}
 
-        layout_dict={el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_1={el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_2={el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_3={el:0 for el in LAYOUT_TYPES}
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            unique_ents = self._unique_entities(res["corrupted_entities"])
 
-        counter_layout = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_1 = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_2 = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_3 = {el:0 for el in LAYOUT_TYPES}
+            for ans in all_answers:
+                is_unable = self._is_unable(ans)
+                for el in unique_ents:
+                    t = el["objectType"]
+                    cnt[t] += 1
+                    if complexity == 1: cnt_c1[t] += 1
+                    elif complexity == 2: cnt_c2[t] += 1
+                    elif complexity == 3: cnt_c3[t] += 1
+                    if is_unable:
+                        hit[t] += 1
+                        if complexity == 1: hit_c1[t] += 1
+                        elif complexity == 2: hit_c2[t] += 1
+                        elif complexity == 3: hit_c3[t] += 1
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                complexity = res["complexity"]
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
-                corrupted_entities = res["corrupted_entities"]
-                unique_corrupted_entities = []
-
-                seen=[]
-                for entity in corrupted_entities:
-                    if entity["text"] not in seen:
-                        seen.append(entity["text"])
-                        unique_corrupted_entities.append(entity)
-
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        for el in unique_corrupted_entities:
-                            layout_dict[el["objectType"]]+=1
-                        if complexity == 1:
-                            for el in unique_corrupted_entities:
-                                layout_dict_complexity_1[el["objectType"]]+=1
-                        if complexity == 2:
-                            for el in unique_corrupted_entities:
-                                layout_dict_complexity_2[el["objectType"]]+=1
-                        if complexity == 3:
-                            for el in unique_corrupted_entities:
-                                layout_dict_complexity_3[el["objectType"]]+=1
-                            
-                    for el in unique_corrupted_entities:
-                        counter_layout[el["objectType"]]+=1
-                    if complexity == 1:
-                        for el in unique_corrupted_entities:
-                            counter_layout_complexity_1[el["objectType"]]+=1
-                    if complexity == 2:
-                        for el in unique_corrupted_entities:
-                            counter_layout_complexity_2[el["objectType"]]+=1
-                    if complexity == 3:
-                        for el in unique_corrupted_entities:
-                            counter_layout_complexity_3[el["objectType"]]+=1
-        res_layout = {}
-        res_layout_complexity_1 = {}
-        res_layout_complexity_2 = {}
-        res_layout_complexity_3 = {}
-        for el in layout_dict:
-            res_layout[el] = layout_dict[el] / counter_layout[el] if counter_layout[el] != 0 else 0
-            res_layout_complexity_1[el] = layout_dict_complexity_1[el] / counter_layout_complexity_1[el] if counter_layout_complexity_1[el] != 0 else 0
-            res_layout_complexity_2[el] = layout_dict_complexity_2[el] / counter_layout_complexity_2[el] if counter_layout_complexity_2[el] != 0 else 0
-            res_layout_complexity_3[el] = layout_dict_complexity_3[el] / counter_layout_complexity_3[el] if counter_layout_complexity_3[el] != 0 else 0 
-        
-        return [
-            res_layout,
-            res_layout_complexity_1,
-            res_layout_complexity_2,
-            res_layout_complexity_3,
-        ]
-    
 
     def UR_PAGE(self):
-        # print("UR_PAGE")
+        # UR split by whether the answer's page contains the corrupted entity (inpage) or not (outpage).
+        in_hit  = in_hit_c1  = in_hit_c2  = in_hit_c3  = 0
+        in_cnt  = in_cnt_c1  = in_cnt_c2  = in_cnt_c3  = 0
+        out_hit = out_hit_c1 = out_hit_c2 = out_hit_c3 = 0
+        out_cnt = out_cnt_c1 = out_cnt_c2 = out_cnt_c3 = 0
 
-        total_inpage = 0 
-        total_inpage_complexity_1 = 0
-        total_inpage_complexity_2 = 0
-        total_inpage_complexity_3 = 0
-        total_inpage_counter = 0
-        total_inpage_counter_complexity_1 = 0
-        total_inpage_counter_complexity_2 = 0
-        total_inpage_counter_complexity_3 = 0
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            patch_entities = res["patch_entities"]
 
-        total_outpage = 0
-        total_outpage_complexity_1 = 0
-        total_outpage_complexity_2 = 0
-        total_outpage_complexity_3 = 0
-        total_outpage_counter = 0
-        total_outpage_counter_complexity_1 = 0
-        total_outpage_counter_complexity_2 = 0
-        total_outpage_counter_complexity_3 = 0
+            seen = [e["text"] for e in self._unique_entities(res["corrupted_entities"])]
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                complexity = res["complexity"]
+            for ans in all_answers:
+                pages_id = [p.split("/")[-1] for p in ans.get("pages", [])]
 
-                corrupted_entities = res["corrupted_entities"]
-                unique_corrupted_entities = []
-                seen=[]
-                for entity in corrupted_entities:
-                    if entity["text"] not in seen:
-                        seen.append(entity["text"])
-                        unique_corrupted_entities.append(entity)
+                # An answer is "inpage" when at least one of its pages contains a corrupted entity
+                on_corrupted_page = any(
+                    entity["text"] in seen
+                    for pID, p in patch_entities.items() if pID in pages_id
+                    for obj in p.values()
+                    for entity in obj["entities"]
+                )
+                is_unable = self._is_unable(ans)
 
-                patch_entities = res["patch_entities"]
+                if on_corrupted_page:
+                    in_cnt += 1
+                    in_cnt_c1, in_cnt_c2, in_cnt_c3 = self._count_by_complexity(complexity, in_cnt_c1, in_cnt_c2, in_cnt_c3)
+                    if is_unable:
+                        in_hit += 1
+                        in_hit_c1, in_hit_c2, in_hit_c3 = self._count_by_complexity(complexity, in_hit_c1, in_hit_c2, in_hit_c3)
+                else:
+                    out_cnt += 1
+                    out_cnt_c1, out_cnt_c2, out_cnt_c3 = self._count_by_complexity(complexity, out_cnt_c1, out_cnt_c2, out_cnt_c3)
+                    if is_unable:
+                        out_hit += 1
+                        out_hit_c1, out_hit_c2, out_hit_c3 = self._count_by_complexity(complexity, out_hit_c1, out_hit_c2, out_hit_c3)
 
-                for ans in all_answers:
-                    pages_path = ans.get("pages", [])
-                    pages_id = []
-                    for page in pages_path:
-                        pages_id.append(page.split("/")[-1])
+        def _safe_div(h, c): return h / c if c else 0
 
-                    contains_corrupted_entities = False
-                    for pID,p in patch_entities.items():
-                        if pID in pages_id:
-                            for objID, obj in p.items():
-                                obj_entities = obj["entities"]
-                                for entity in obj_entities:
-                                    if entity["text"] in seen:
-                                        contains_corrupted_entities = True
-                                        break
-                            if contains_corrupted_entities:
-                                break
-                    if contains_corrupted_entities:
-                        total_inpage_counter += 1
-                        if complexity == 1:
-                            total_inpage_counter_complexity_1 += 1
-                        if complexity == 2:
-                            total_inpage_counter_complexity_2 += 1
-                        if complexity == 3:
-                            total_inpage_counter_complexity_3 += 1
-                        if ans.get("answer_converted", "").lower() == "unable to determine":
-                            total_inpage += 1
-                            if complexity == 1:
-                                total_inpage_complexity_1 += 1
-                            if complexity == 2:
-                                total_inpage_complexity_2 += 1
-                            if complexity == 3:
-                                total_inpage_complexity_3 += 1
-
-                        # EXTEND ON DOCUMENT ELEMENT AND LAYOUT POSITION
-                    else:
-                        total_outpage_counter += 1
-                        if complexity == 1:
-                            total_outpage_counter_complexity_1 += 1
-                        if complexity == 2:
-                            total_outpage_counter_complexity_2 += 1
-                        if complexity == 3:
-                            total_outpage_counter_complexity_3 += 1
-                        if ans.get("answer_converted", "").lower() == "unable to determine":
-                            total_outpage += 1
-                            if complexity == 1:
-                                total_outpage_complexity_1 += 1
-                            if complexity == 2:
-                                total_outpage_complexity_2 += 1
-                            if complexity == 3:
-                                total_outpage_complexity_3 += 1
-        
-
-        if total_inpage_counter == 0:
-            res_inpage = 0
-            res_inpage_complexity_1 = 0
-            res_inpage_complexity_2 = 0
-            res_inpage_complexity_3 = 0
-        else:
-            res_inpage = total_inpage / total_inpage_counter
-            res_inpage_complexity_1 = total_inpage_complexity_1 / total_inpage_counter_complexity_1 if total_inpage_counter_complexity_1 != 0 else 0
-            res_inpage_complexity_2 = total_inpage_complexity_2 / total_inpage_counter_complexity_2 if total_inpage_counter_complexity_2 != 0 else 0
-            res_inpage_complexity_3 = total_inpage_complexity_3 / total_inpage_counter_complexity_3 if total_inpage_counter_complexity_3 != 0 else 0
-        if total_outpage_counter == 0:
-            res_outpage = 0
-            res_outpage_complexity_1 = 0
-            res_outpage_complexity_2 = 0
-            res_outpage_complexity_3 = 0
-        else:
-            res_outpage = total_outpage / total_outpage_counter
-            res_outpage_complexity_1 = total_outpage_complexity_1 / total_outpage_counter_complexity_1 if total_outpage_counter_complexity_1 != 0 else 0
-            res_outpage_complexity_2 = total_outpage_complexity_2 / total_outpage_counter_complexity_2 if total_outpage_counter_complexity_2 != 0 else 0
-            res_outpage_complexity_3 = total_outpage_complexity_3 / total_outpage_counter_complexity_3 if total_outpage_counter_complexity_3 != 0 else 0
-        if self.debug:
-            print(f"Total inpage counter: {total_inpage_counter}, {total_inpage_counter_complexity_1}, {total_inpage_counter_complexity_2}, {total_inpage_counter_complexity_3}")
-            print(f"Total inpage: {total_inpage}, {total_inpage_complexity_1}, {total_inpage_complexity_2}, {total_inpage_complexity_3}")
-            print(f"Total outpage counter: {total_outpage_counter}, {total_outpage_counter_complexity_1}, {total_outpage_counter_complexity_2}, {total_outpage_counter_complexity_3}")
-            print(f"Total outpage: {total_outpage}, {total_outpage_complexity_1}, {total_outpage_complexity_2}, {total_outpage_complexity_3}")
-        
         return [
-            res_inpage,
-            res_inpage_complexity_1,
-            res_inpage_complexity_2,
-            res_inpage_complexity_3,
-            res_outpage,
-            res_outpage_complexity_1,
-            res_outpage_complexity_2,
-            res_outpage_complexity_3,
+            _safe_div(in_hit,  in_cnt),
+            _safe_div(in_hit_c1,  in_cnt_c1),
+            _safe_div(in_hit_c2,  in_cnt_c2),
+            _safe_div(in_hit_c3,  in_cnt_c3),
+            _safe_div(out_hit, out_cnt),
+            _safe_div(out_hit_c1, out_cnt_c1),
+            _safe_div(out_hit_c2, out_cnt_c2),
+            _safe_div(out_hit_c3, out_cnt_c3),
         ]
 
     
     def UR_NLPE(self):
-        # print("UR_NLPE")
-        correct_unable = 0
-        correct_unable_complexity_1 = 0
-        correct_unable_complexity_2 = 0
-        correct_unable_complexity_3 = 0
-        total_corrupted = 0
-        total_corrupted_complexity_1 = 0
-        total_corrupted_complexity_2 = 0
-        total_corrupted_complexity_3 = 0
+        # UR sliced by NLP entity type, measured per answer
+        hit    = {el: 0 for el in MACRO_ENTITY_TYPES}
+        hit_c1 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        hit_c2 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        hit_c3 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt    = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt_c1 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt_c2 = {el: 0 for el in MACRO_ENTITY_TYPES}
+        cnt_c3 = {el: 0 for el in MACRO_ENTITY_TYPES}
 
-        entity_dict={el:0 for el in MACRO_ENTITY_TYPES}
-        entity_dict_complexity_1={el:0 for el in MACRO_ENTITY_TYPES}
-        entity_dict_complexity_2={el:0 for el in MACRO_ENTITY_TYPES}
-        entity_dict_complexity_3={el:0 for el in MACRO_ENTITY_TYPES}
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            entity_types = res["entity_type"]
 
-        counter_entity = {el:0 for el in MACRO_ENTITY_TYPES}
-        counter_entity_complexity_1 = {el:0 for el in MACRO_ENTITY_TYPES}
-        counter_entity_complexity_2 = {el:0 for el in MACRO_ENTITY_TYPES}
-        counter_entity_complexity_3 = {el:0 for el in MACRO_ENTITY_TYPES}
+            for ans in all_answers:
+                is_unable = self._is_unable(ans)
+                for et in entity_types:
+                    macro = MACRO_ENTITY_MAPPER[et]
+                    cnt[macro] += 1
+                    if complexity == 1: cnt_c1[macro] += 1
+                    elif complexity == 2: cnt_c2[macro] += 1
+                    elif complexity == 3: cnt_c3[macro] += 1
+                    if is_unable:
+                        hit[macro] += 1
+                        if complexity == 1: hit_c1[macro] += 1
+                        elif complexity == 2: hit_c2[macro] += 1
+                        elif complexity == 3: hit_c3[macro] += 1
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                complexity = res["complexity"]
-                corrupted_entities = res["entity_type"]    
-
-                for ans in all_answers:
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        # tot_unable_count += 1
-                        for el in corrupted_entities:
-                            entity_dict[MACRO_ENTITY_MAPPER[el]]+=1
-                            if complexity == 1:
-                                entity_dict_complexity_1[MACRO_ENTITY_MAPPER[el]]+=1
-                            if complexity == 2:
-                                entity_dict_complexity_2[MACRO_ENTITY_MAPPER[el]]+=1
-                            if complexity == 3: 
-                                entity_dict_complexity_3[MACRO_ENTITY_MAPPER[el]]+=1
-
-                    # total_answers += 1
-                    for el in corrupted_entities:
-                        counter_entity[MACRO_ENTITY_MAPPER[el]]+=1
-                        if complexity == 1:
-                            counter_entity_complexity_1[MACRO_ENTITY_MAPPER[el]]+=1
-                        if complexity == 2:
-                            counter_entity_complexity_2[MACRO_ENTITY_MAPPER[el]]+=1
-                        if complexity == 3:
-                            counter_entity_complexity_3[MACRO_ENTITY_MAPPER[el]]+=1
-
-        res_entity = {}
-        res_entity_complexity_1 = {}
-        res_entity_complexity_2 = {}
-        res_entity_complexity_3 = {}
-        # print("Entity dict",entity_dict)
-        # print("Entity counter",counter_entity)
-        for el in entity_dict:
-            # print("Final",el)
-            res_entity[el] = entity_dict[el] / counter_entity[el] if counter_entity[el] != 0 else 0
-            res_entity_complexity_1[el] = entity_dict_complexity_1[el] / counter_entity_complexity_1[el] if counter_entity_complexity_1[el] != 0 else 0
-            res_entity_complexity_2[el] = entity_dict_complexity_2[el] / counter_entity_complexity_2[el] if counter_entity_complexity_2[el] != 0 else 0
-            res_entity_complexity_3[el] = entity_dict_complexity_3[el] / counter_entity_complexity_3[el] if counter_entity_complexity_3[el] != 0 else 0
-
-        if self.debug:
-        # if True:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in MACRO_ENTITY_TYPES:
-                print(f"{res_entity[k]:.2f}\t{res_entity_complexity_1[k]:.2f}\t{res_entity_complexity_2[k]:.2f}\t{res_entity_complexity_3[k]:.2f}")
-        
-
-        return [
-            res_entity,
-            res_entity_complexity_1,    
-            res_entity_complexity_2,
-            res_entity_complexity_3,
-        ]    
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
 
     def UR_PAGE_DE(self):
-        # print("UR_PAGE_DE")
+        # UR restricted to inpage answers, sliced by the layout type of the element
+        # that contains the corrupted entity on that page
+        hit    = {el: 0 for el in LAYOUT_TYPES}
+        hit_c1 = {el: 0 for el in LAYOUT_TYPES}
+        hit_c2 = {el: 0 for el in LAYOUT_TYPES}
+        hit_c3 = {el: 0 for el in LAYOUT_TYPES}
+        cnt    = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c1 = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c2 = {el: 0 for el in LAYOUT_TYPES}
+        cnt_c3 = {el: 0 for el in LAYOUT_TYPES}
 
-        total_inpage = 0 
-        total_inpage_complexity_1 = 0
-        total_inpage_complexity_2 = 0
-        total_inpage_complexity_3 = 0
-        total_inpage_counter = 0
-        total_inpage_counter_complexity_1 = 0
-        total_inpage_counter_complexity_2 = 0
-        total_inpage_counter_complexity_3 = 0
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            patch_entities = res["patch_entities"]
+            seen = [e["text"] for e in self._unique_entities(res["corrupted_entities"])]
 
-        total_outpage = 0
-        total_outpage_complexity_1 = 0
-        total_outpage_complexity_2 = 0
-        total_outpage_complexity_3 = 0
-        total_outpage_counter = 0
-        total_outpage_counter_complexity_1 = 0
-        total_outpage_counter_complexity_2 = 0
-        total_outpage_counter_complexity_3 = 0
+            for ans in all_answers:
+                pages_id = [p.split("/")[-1] for p in ans.get("pages", [])]
 
-        layout_dict_inpage = {el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_1_inpage = {el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_2_inpage = {el:0 for el in LAYOUT_TYPES}
-        layout_dict_complexity_3_inpage = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_inpage = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_1_inpage = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_2_inpage = {el:0 for el in LAYOUT_TYPES}
-        counter_layout_complexity_3_inpage = {el:0 for el in LAYOUT_TYPES}
+                # Collect the layout types of objects on inpage pages that contain corrupted entities
+                de_types = list(set(
+                    obj["type"]
+                    for pID, p in patch_entities.items() if pID in pages_id
+                    for obj in p.values()
+                    for entity in obj["entities"] if entity["text"] in seen
+                ))
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                complexity = res["complexity"]
+                if de_types:
+                    is_unable = self._is_unable(ans)
+                    for t in de_types:
+                        cnt[t] += 1
+                        if complexity == 1: cnt_c1[t] += 1
+                        elif complexity == 2: cnt_c2[t] += 1
+                        elif complexity == 3: cnt_c3[t] += 1
+                        if is_unable:
+                            hit[t] += 1
+                            if complexity == 1: hit_c1[t] += 1
+                            elif complexity == 2: hit_c2[t] += 1
+                            elif complexity == 3: hit_c3[t] += 1
 
-                corrupted_entities = res["corrupted_entities"]
-                unique_corrupted_entities = []
-                seen=[]
-                for entity in corrupted_entities:
-                    if entity["text"] not in seen:
-                        seen.append(entity["text"])
-                        unique_corrupted_entities.append(entity)
-
-                patch_entities = res["patch_entities"]
-
-                for ans in all_answers:
-                    pages_path = ans.get("pages", [])
-                    pages_id = []
-                    for page in pages_path:
-                        pages_id.append(page.split("/")[-1])
-
-                    contains_corrupted_entities = False
-                    doc_elements_pages = []
-                    for pID,p in patch_entities.items():
-                        if pID in pages_id:
-                            for objID, obj in p.items():
-                                obj_entities = obj["entities"]
-                                for entity in obj_entities:
-                                    if entity["text"] in seen:
-                                        contains_corrupted_entities = True
-                                        doc_elements_pages.append(obj["type"])
-                                        # break
-                    unique_doc_elements_pages = list(set(doc_elements_pages))
-
-                    if contains_corrupted_entities:
-                        for el in unique_doc_elements_pages:
-                            counter_layout_inpage[el]+=1
-                            if complexity == 1:
-                                counter_layout_complexity_1_inpage[el]+=1
-                            if complexity == 2:
-                                counter_layout_complexity_2_inpage[el]+=1
-                            if complexity == 3:
-                                counter_layout_complexity_3_inpage[el]+=1
-
-                        if ans.get("answer_converted", "").lower() == "unable to determine":
-                            for el in unique_doc_elements_pages:
-                                layout_dict_inpage[el]+=1
-                                if complexity == 1:
-                                    layout_dict_complexity_1_inpage[el]+=1
-                                if complexity == 2:
-                                    layout_dict_complexity_2_inpage[el]+=1  
-                                if complexity == 3:
-                                    layout_dict_complexity_3_inpage[el]+=1
-        
-
-        # normalize the layout_dict wrt total_corrupted
-        res_layout = {}
-        res_layout_complexity_1 = {}
-        res_layout_complexity_2 = {}
-        res_layout_complexity_3 = {}
-        for el in layout_dict_inpage:
-            res_layout[el] = layout_dict_inpage[el] / counter_layout_inpage[el] if counter_layout_inpage[el] != 0 else 0
-            res_layout_complexity_1[el] = layout_dict_complexity_1_inpage[el] / counter_layout_complexity_1_inpage[el] if counter_layout_complexity_1_inpage[el] != 0 else 0
-            res_layout_complexity_2[el] = layout_dict_complexity_2_inpage[el] / counter_layout_complexity_2_inpage[el] if counter_layout_complexity_2_inpage[el] != 0 else 0
-            res_layout_complexity_3[el] = layout_dict_complexity_3_inpage[el] / counter_layout_complexity_3_inpage[el] if counter_layout_complexity_3_inpage[el] != 0 else 0
-
-        if self.debug:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in LAYOUT_TYPES:
-                print(f"{layout_dict_inpage[k]:.2f}\t{layout_dict_complexity_1_inpage[k]:.2f}\t{layout_dict_complexity_2_inpage[k]:.2f}\t{layout_dict_complexity_3_inpage[k]:.2f}")
-        
-
-        return [
-            res_layout,
-            res_layout_complexity_1,    
-            res_layout_complexity_2,
-            res_layout_complexity_3,
-        ]
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
 
     def UR_PAGE_QP(self):
-        # print("UR_PAGE_QP")
+        # UR restricted to inpage answers, sliced by the quadrant of the corrupted entity's bbox
+        hit    = {el: 0 for el in PAGE_LAYOUT}
+        hit_c1 = {el: 0 for el in PAGE_LAYOUT}
+        hit_c2 = {el: 0 for el in PAGE_LAYOUT}
+        hit_c3 = {el: 0 for el in PAGE_LAYOUT}
+        cnt    = {el: 0 for el in PAGE_LAYOUT}
+        cnt_c1 = {el: 0 for el in PAGE_LAYOUT}
+        cnt_c2 = {el: 0 for el in PAGE_LAYOUT}
+        cnt_c3 = {el: 0 for el in PAGE_LAYOUT}
 
-        total_inpage = 0 
-        total_inpage_complexity_1 = 0
-        total_inpage_complexity_2 = 0
-        total_inpage_complexity_3 = 0
-        total_inpage_counter = 0
-        total_inpage_counter_complexity_1 = 0
-        total_inpage_counter_complexity_2 = 0
-        total_inpage_counter_complexity_3 = 0
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            patch_entities = res["patch_entities"]
+            seen = [e["text"] for e in self._unique_entities(res["corrupted_entities"])]
 
-        total_outpage = 0
-        total_outpage_complexity_1 = 0
-        total_outpage_complexity_2 = 0
-        total_outpage_complexity_3 = 0
-        total_outpage_counter = 0
-        total_outpage_counter_complexity_1 = 0
-        total_outpage_counter_complexity_2 = 0
-        total_outpage_counter_complexity_3 = 0
+            unique_pages = list(set(p for a in all_answers for p in a.get("pages", [])))
+            avg_x, avg_y = self._page_dimensions(unique_pages)
 
-        pos_dict={el:0 for el in PAGE_LAYOUT}
-        pos_dict_complexity_1={el:0 for el in PAGE_LAYOUT}
-        pos_dict_complexity_2={el:0 for el in PAGE_LAYOUT}
-        pos_dict_complexity_3={el:0 for el in PAGE_LAYOUT}
+            for ans in all_answers:
+                pages_id = [p.split("/")[-1] for p in ans.get("pages", [])]
 
-        counter_pos = {el:0 for el in PAGE_LAYOUT}
-        counter_pos_complexity_1 = {el:0 for el in PAGE_LAYOUT}
-        counter_pos_complexity_2 = {el:0 for el in PAGE_LAYOUT}
-        counter_pos_complexity_3 = {el:0 for el in PAGE_LAYOUT}
+                # Objects on inpage pages that contain corrupted entities
+                inpage_objs = [
+                    obj
+                    for pID, p in patch_entities.items() if pID in pages_id
+                    for obj in p.values()
+                    if any(e["text"] in seen for e in obj["entities"])
+                ]
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                complexity = res["complexity"]
+                if inpage_objs:
+                    is_unable = self._is_unable(ans)
+                    for obj in inpage_objs:
+                        q = self._bbox_quadrant(obj.get("bbox", []), avg_x, avg_y)
+                        cnt[q] += 1
+                        if complexity == 1: cnt_c1[q] += 1
+                        elif complexity == 2: cnt_c2[q] += 1
+                        elif complexity == 3: cnt_c3[q] += 1
+                        if is_unable:
+                            hit[q] += 1
+                            if complexity == 1: hit_c1[q] += 1
+                            elif complexity == 2: hit_c2[q] += 1
+                            elif complexity == 3: hit_c3[q] += 1
 
-                corrupted_entities = res["corrupted_entities"]
-                unique_corrupted_entities = []
-                seen=[]
-                for entity in corrupted_entities:
-                    if entity["text"] not in seen:
-                        seen.append(entity["text"])
-                        unique_corrupted_entities.append(entity)
-
-                patch_entities = res["patch_entities"]
-
-
-                pages=[]
-                for ans in all_answers:
-                    pages.extend(ans.get("pages", []))
-                unique_pages = list(set(pages))
-                average_x_coord = 0
-                average_y_coord = 0
-                for page in unique_pages:
-                    #/data2/dnapolitano/VQA/data/DUDE_train-val-test_binaries/images
-                    if "data1" in page:
-                        page=page.replace("data1","data2")
-                    x_size, y_size = Image.open(page).size
-                    average_x_coord += x_size
-                    average_y_coord += y_size
-                average_x_coord /= len(unique_pages)
-                average_y_coord /= len(unique_pages)
-
-                for ans in all_answers:
-                    pages_path = ans.get("pages", [])
-                    pages_id = []
-                    for page in pages_path:
-                        pages_id.append(page.split("/")[-1])
-
-                    contains_corrupted_entities = False
-                    doc_elements_pages = []
-                    for pID, p in patch_entities.items():
-                        if pID in pages_id:
-                            for objID, obj in p.items():
-                                obj_entities = obj["entities"]
-                                for entity in obj_entities:
-                                    if entity["text"] in seen:
-                                        contains_corrupted_entities = True
-                                        doc_elements_pages.append(obj)
-
-                    if contains_corrupted_entities:
-                        for el in doc_elements_pages:
-                            corrupted_entity_bbox = el.get("bbox", [])
-                            bbox_center = [
-                                (corrupted_entity_bbox[0] + corrupted_entity_bbox[2]) / 2,
-                                (corrupted_entity_bbox[1] + corrupted_entity_bbox[3]) / 2
-                            ]
-                            if bbox_center[0] < average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                                counter_pos["TOP_LEFT"]+=1
-                                if complexity == 1:
-                                    counter_pos_complexity_1["TOP_LEFT"]+=1
-                                if complexity == 2:
-                                    counter_pos_complexity_2["TOP_LEFT"]+=1
-                                if complexity == 3:
-                                    counter_pos_complexity_3["TOP_LEFT"]+=1
-                            elif bbox_center[0] < average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                                counter_pos["BOTTOM_LEFT"]+=1
-                                if complexity == 1:
-                                    counter_pos_complexity_1["BOTTOM_LEFT"]+=1
-                                if complexity == 2:
-                                    counter_pos_complexity_2["BOTTOM_LEFT"]+=1
-                                if complexity == 3:
-                                    counter_pos_complexity_3["BOTTOM_LEFT"]+=1
-                            elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                                counter_pos["TOP_RIGHT"]+=1
-                                if complexity == 1:
-                                    counter_pos_complexity_1["TOP_RIGHT"]+=1
-                                if complexity == 2:
-                                    counter_pos_complexity_2["TOP_RIGHT"]+=1
-                                if complexity == 3:
-                                    counter_pos_complexity_3["TOP_RIGHT"]+=1
-                            elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                                counter_pos["BOTTOM_RIGHT"]+=1
-                                if complexity == 1:
-                                    counter_pos_complexity_1["BOTTOM_RIGHT"]+=1
-                                if complexity == 2:
-                                    counter_pos_complexity_2["BOTTOM_RIGHT"]+=1
-                                if complexity == 3:
-                                    counter_pos_complexity_3["BOTTOM_RIGHT"]+=1
-
-                        if ans.get("answer_converted", "").lower() == "unable to determine":
-                            for el in doc_elements_pages:
-                                corrupted_entity_bbox = el.get("bbox", [])
-                                bbox_center = [
-                                    (corrupted_entity_bbox[0] + corrupted_entity_bbox[2]) / 2,
-                                    (corrupted_entity_bbox[1] + corrupted_entity_bbox[3]) / 2
-                                ]
-                                if bbox_center[0] < average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                                    pos_dict["TOP_LEFT"]+=1
-                                    if complexity == 1:
-                                        pos_dict_complexity_1["TOP_LEFT"]+=1
-                                    if complexity == 2:
-                                        pos_dict_complexity_2["TOP_LEFT"]+=1
-                                    if complexity == 3:
-                                        pos_dict_complexity_3["TOP_LEFT"]+=1
-                                elif bbox_center[0] < average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                                    pos_dict["BOTTOM_LEFT"]+=1
-                                    if complexity == 1:
-                                        pos_dict_complexity_1["BOTTOM_LEFT"]+=1
-                                    if complexity == 2:
-                                        pos_dict_complexity_2["BOTTOM_LEFT"]+=1
-                                    if complexity == 3:
-                                        pos_dict_complexity_3["BOTTOM_LEFT"]+=1
-                                elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] < average_y_coord / 2:
-                                    pos_dict["TOP_RIGHT"]+=1
-                                    if complexity == 1:
-                                        pos_dict_complexity_1["TOP_RIGHT"]+=1
-                                    if complexity == 2:
-                                        pos_dict_complexity_2["TOP_RIGHT"]+=1
-                                    if complexity == 3:
-                                        pos_dict_complexity_3["TOP_RIGHT"]+=1
-                                elif bbox_center[0] >= average_x_coord / 2 and bbox_center[1] >= average_y_coord / 2:
-                                    pos_dict["BOTTOM_RIGHT"]+=1
-                                    if complexity == 1:
-                                        pos_dict_complexity_1["BOTTOM_RIGHT"]+=1
-                                    if complexity == 2:
-                                        pos_dict_complexity_2["BOTTOM_RIGHT"]+=1
-                                    if complexity == 3:
-                                        pos_dict_complexity_3["BOTTOM_RIGHT"]+=1
-        
-
-        res_pos = {}
-        res_pos_complexity_1 = {}
-        res_pos_complexity_2 = {}
-        res_pos_complexity_3 = {}
-        # print("Entity dict",entity_dict)
-        # print("Entity counter",counter_entity)
-        for el in pos_dict:
-            # print("Final",el)
-            res_pos[el] = pos_dict[el] / counter_pos[el] if counter_pos[el] != 0 else 0
-            res_pos_complexity_1[el] = pos_dict_complexity_1[el] / counter_pos_complexity_1[el] if counter_pos_complexity_1[el] != 0 else 0
-            res_pos_complexity_2[el] = pos_dict_complexity_2[el] / counter_pos_complexity_2[el] if counter_pos_complexity_2[el] != 0 else 0
-            res_pos_complexity_3[el] = pos_dict_complexity_3[el] / counter_pos_complexity_3[el] if counter_pos_complexity_3[el] != 0 else 0
-
-        if self.debug:
-        # if True:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in MACRO_ENTITY_TYPES:
-                print(f"{res_pos[k]:.2f}\t{res_pos_complexity_1[k]:.2f}\t{res_pos_complexity_2[k]:.2f}\t{res_pos_complexity_3[k]:.2f}")
-        
-
-        return [
-            res_pos,
-            res_pos_complexity_1,    
-            res_pos_complexity_2,
-            res_pos_complexity_3,
-        ]
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
 
     def UR_PAGE_DED(self):
-        # print("UR_PAGE_DED")
+        # UR per answer, sliced by number of visual elements (figures/tables/formulas) on that answer's pages.
+        # Buckets: 0, 1, >1 visual elements.
+        DED_BUCKETS = ["0", "1", ">1"]
+        hit    = {k: 0 for k in DED_BUCKETS}
+        hit_c1 = {k: 0 for k in DED_BUCKETS}
+        hit_c2 = {k: 0 for k in DED_BUCKETS}
+        hit_c3 = {k: 0 for k in DED_BUCKETS}
+        cnt    = {k: 0 for k in DED_BUCKETS}
+        cnt_c1 = {k: 0 for k in DED_BUCKETS}
+        cnt_c2 = {k: 0 for k in DED_BUCKETS}
+        cnt_c3 = {k: 0 for k in DED_BUCKETS}
 
-        total_inpage = 0 
-        total_inpage_complexity_1 = 0
-        total_inpage_complexity_2 = 0
-        total_inpage_complexity_3 = 0
-        total_inpage_counter = 0
-        total_inpage_counter_complexity_1 = 0
-        total_inpage_counter_complexity_2 = 0
-        total_inpage_counter_complexity_3 = 0
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+            layout_doc = res["layout_analysis"]["pages"]
 
-        total_outpage = 0
-        total_outpage_complexity_1 = 0
-        total_outpage_complexity_2 = 0
-        total_outpage_complexity_3 = 0
-        total_outpage_counter = 0
-        total_outpage_counter_complexity_1 = 0
-        total_outpage_counter_complexity_2 = 0
-        total_outpage_counter_complexity_3 = 0
+            for ans in all_answers:
+                pages_id = [p.split("/")[-1] for p in ans.get("pages", [])]
 
-        layout_dict={"0":0, "1":0, ">1":0}
-        layout_dict_complexity_1={"0":0, "1":0, ">1":0}
-        layout_dict_complexity_2={"0":0, "1":0, ">1":0}
-        layout_dict_complexity_3={"0":0, "1":0, ">1":0}
+                doc_dist = {el: 0 for el in MACRO_LAYOUT_TYPES}
+                for page, info in layout_doc.items():
+                    if page in pages_id:
+                        for obj in info["layout_analysis"].values():
+                            doc_dist[MAPPER_LAYOUT_TYPES[obj["ObjectType"]]] += 1
 
-        counter_layout = {"0":0, "1":0, ">1":0}
-        counter_layout_complexity_1 = {"0":0, "1":0, ">1":0}
-        counter_layout_complexity_2 = {"0":0, "1":0, ">1":0}
-        counter_layout_complexity_3 = {"0":0, "1":0, ">1":0}
+                vre = doc_dist["vre"]
+                key = "0" if vre == 0 else ("1" if vre == 1 else ">1")
 
-        for res in self.results:
-            if (
-                res["is_corrupted"]
-                and "verification_result" in res
-                and "vqa_results" in res["verification_result"]
-                and len(res["verification_result"]["vqa_results"]) > 0
-            ):
-                vqa_result = res["verification_result"]["vqa_results"][0]
-                all_answers = vqa_result.get("answers", vqa_result.get("answer", []))
-                complexity = res["complexity"]
+                cnt[key] += 1
+                if complexity == 1: cnt_c1[key] += 1
+                elif complexity == 2: cnt_c2[key] += 1
+                elif complexity == 3: cnt_c3[key] += 1
+                if self._is_unable(ans):
+                    hit[key] += 1
+                    if complexity == 1: hit_c1[key] += 1
+                    elif complexity == 2: hit_c2[key] += 1
+                    elif complexity == 3: hit_c3[key] += 1
 
-                corrupted_entities = res["corrupted_entities"]
-                unique_corrupted_entities = []
-                seen=[]
-                for entity in corrupted_entities:
-                    if entity["text"] not in seen:
-                        seen.append(entity["text"])
-                        unique_corrupted_entities.append(entity)
+        return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
-                patch_entities = res["patch_entities"]
-                layout_doc = res["layout_analysis"]["pages"]
-
-                for ans in all_answers:
-                    pages_path = ans.get("pages", [])
-                    pages_id = []
-                    for page in pages_path:
-                        pages_id.append(page.split("/")[-1])
-
-                    doc_dist = {el:0 for el in MACRO_LAYOUT_TYPES}
-                    for page, info in layout_doc.items():
-                        if page in pages_id:
-                            layout_page=info["layout_analysis"]
-                            for objID, obj in layout_page.items():
-                                doc_dist[MAPPER_LAYOUT_TYPES[obj["ObjectType"]]]+=1
-                    
-                    if doc_dist["vre"]==0:
-                        counter_layout["0"]+=1
-                        if complexity == 1:
-                            counter_layout_complexity_1["0"]+=1
-                        if complexity == 2:
-                            counter_layout_complexity_2["0"]+=1
-                        if complexity == 3:
-                            counter_layout_complexity_3["0"]+=1
-                    elif doc_dist["vre"]==1:
-                        counter_layout["1"]+=1
-                        if complexity == 1:
-                            counter_layout_complexity_1["1"]+=1
-                        if complexity == 2:
-                            counter_layout_complexity_2["1"]+=1
-                        if complexity == 3:
-                            counter_layout_complexity_3["1"]+=1
-                    else:
-                        counter_layout[">1"]+=1
-                        if complexity == 1:
-                            counter_layout_complexity_1[">1"]+=1
-                        if complexity == 2:
-                            counter_layout_complexity_2[">1"]+=1
-                        if complexity == 3:
-                            counter_layout_complexity_3[">1"]+=1
-
-
-                    if ans.get("answer_converted", "").lower() == "unable to determine":
-                        if doc_dist["vre"]==0:
-                            layout_dict["0"]+=1
-                            if complexity == 1:
-                                layout_dict_complexity_1["0"]+=1
-                            if complexity == 2:
-                                layout_dict_complexity_2["0"]+=1
-                            if complexity == 3:
-                                layout_dict_complexity_3["0"]+=1
-                        elif doc_dist["vre"]==1:
-                            layout_dict["1"]+=1
-                            if complexity == 1:
-                                layout_dict_complexity_1["1"]+=1
-                            if complexity == 2:
-                                layout_dict_complexity_2["1"]+=1
-                            if complexity == 3:
-                                layout_dict_complexity_3["1"]+=1
-                        else:
-                            layout_dict[">1"]+=1
-                            if complexity == 1:
-                                layout_dict_complexity_1[">1"]+=1
-                            if complexity == 2:
-                                layout_dict_complexity_2[">1"]+=1
-                            if complexity == 3:
-                                layout_dict_complexity_3[">1"]+=1
-        
-
-        # normalize the layout_dict wrt total_corrupted
-        res_layout = {}
-        res_layout_complexity_1 = {}
-        res_layout_complexity_2 = {}
-        res_layout_complexity_3 = {}
-        for el in layout_dict:  
-            res_layout[el] = layout_dict[el] / counter_layout[el] if counter_layout[el] != 0 else 0
-            res_layout_complexity_1[el] = layout_dict_complexity_1[el] / counter_layout_complexity_1[el] if counter_layout_complexity_1[el] != 0 else 0
-            res_layout_complexity_2[el] = layout_dict_complexity_2[el] / counter_layout_complexity_2[el] if counter_layout_complexity_2[el] != 0 else 0
-            res_layout_complexity_3[el] = layout_dict_complexity_3[el] / counter_layout_complexity_3[el] if counter_layout_complexity_3[el] != 0 else 0
-        if self.debug:
-            print(f"Total corrupted questions: {total_corrupted, total_corrupted_complexity_1, total_corrupted_complexity_2, total_corrupted_complexity_3}")
-            print(F"TOT\tC1\tC2\tC3")
-            for k in MACRO_ENTITY_TYPES:
-                print(f"{layout_dict[k]:.2f}\t{layout_dict_complexity_1[k]:.2f}\t{layout_dict_complexity_2[k]:.2f}\t{layout_dict_complexity_3[k]:.2f}")
-        
-        return [
-            res_layout,
-            res_layout_complexity_1,
-            res_layout_complexity_2,    
-            res_layout_complexity_3,
-        ]
-    
 
 def save_metric(folder, name, data, index, complexity_data=None):
     """Save one metric to CSV. If complexity_data is provided (list of 3 dicts),
@@ -2005,348 +867,133 @@ def save_metric(folder, name, data, index, complexity_data=None):
             df_c.to_csv(folder / f"{name}_complexity_{i}.csv")
 
 
-def generate_analysis_report(dataset, images_path):
-    # Group results by window size (e.g., "w=1" and "w=2")
-    print("Initializing Entity Verifier...")
-    entity_verifier = None #EntityIdentifier(ENTITY_TYPES)
-    print("Entity Verifier initialized")
+def _process_model_file(result_file, entity_verifier, dataset, images_path):
+    """Load one augmented JSON, run all metrics, and return (model_name, metrics, list_len).
+    Returns None if the file should be skipped."""
+    model_name = result_file.stem.split("/")[-1].split("_")[0]
+    print(f"Model name: {model_name}")
 
-    report_data_by_window = {}
-    combined_wrong_answer_correlations = []  # Combined correlation data from all models
+    with open(result_file, "r") as f:
+        data = json.load(f)
+
+    results = data.get("corrupted_questions", [])
+    if not results:
+        print(f"Warning: No corrupted questions found in {result_file}")
+        return None
+
+    print(f"Processing {result_file}")
+    print(f"Found {len(results)} questions")
+
+    analyzer = VQAAnalyzer(results, entity_verifier, dataset, debug=False, images_path=images_path)
+    metrics = analyzer.calculate_metrics()
+
+    # QUR_PL returns the page-count axis alongside the metric dicts; extract it here
+    # so the caller can use it as the DataFrame index when saving.
+    *qur_pl_dicts, list_len = metrics["QUR_PL"]
+    metrics["QUR_PL"] = qur_pl_dicts
+
+    return model_name, metrics, list_len
+
+
+def _collect_metrics_into_accum(accum, model_name, metrics):
+    """Merge one model's metrics into the folder-level accumulator."""
+    v, v1, v2, v3, w = metrics["QUR"]
+    accum["QUR"]["total"][model_name] = [v, v1, v2, v3, w]
+
+    # Metrics that return (base, c1, c2, c3) dicts sliced by a categorical dimension
+    for name in ["QUR_DE", "QUR_NLPE", "QUR_QP", "QUR_DED", "QUR_PL",
+                 "UR_DE", "UR_NLPE", "UR_PAGE_DE", "UR_PAGE_QP", "UR_PAGE_DED"]:
+        base, c1, c2, c3 = metrics[name]
+        accum[name]["total"][model_name] = base.values()
+        accum[name]["c1"][model_name] = c1.values()
+        accum[name]["c2"][model_name] = c2.values()
+        accum[name]["c3"][model_name] = c3.values()
+
+    v, v1, v2, v3 = metrics["UR"]
+    accum["UR"]["total"][model_name] = [v, v1, v2, v3]
+
+    # UR_PAGE splits answers into those on the page containing the corrupted entity (inpage)
+    # and those on other pages (outpage), so it gets two separate accumulator entries.
+    inpage, ip_c1, ip_c2, ip_c3, outpage, op_c1, op_c2, op_c3 = metrics["UR_PAGE"]
+    accum["UR_PAGE_inpage"]["total"][model_name] = [inpage, ip_c1, ip_c2, ip_c3]
+    accum["UR_PAGE_outpage"]["total"][model_name] = [outpage, op_c1, op_c2, op_c3]
+
+
+def generate_analysis_report(dataset, images_path):
+    entity_verifier = None  # EntityIdentifier(ENTITY_TYPES) — disabled, no external NER needed
     base_path = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
+    dataset_path = base_path / dataset
     print(f"Base path: {base_path}")
 
-    result_files = []
-    dataset_path = base_path / f"{dataset}"
-
-    # Only process if dataset_path is a directory
     if not dataset_path.is_dir():
         print(f"ERROR: {dataset_path} is not a directory")
         return
 
-    # Collect all result folders: check both dataset_path directly and one level deeper
-    # to handle layouts like MPDocVQA/results_w2_UNABLE/ and MPDocVQA/LLM/results_w2_UNABLE/
+    # Search one level deep to handle both flat (dataset/results_w2/) and
+    # nested (dataset/LLM/results_w2/) folder layouts.
     candidate_parents = [dataset_path] + [p for p in dataset_path.iterdir() if p.is_dir()]
-    result_folders = [p for parent in candidate_parents for p in parent.iterdir() if p.is_dir() and "results" in p.name]
+    result_folders = [
+        p for parent in candidate_parents
+        for p in parent.iterdir()
+        if p.is_dir() and "results" in p.name
+    ]
 
     for folder in result_folders:
-
-        # if folder.name != "results_w1":
-        #     print(f"Skipping folder {folder.name}")
-        #     continue
-
-        print("")
-        print("#" * 100)
+        print(f"\n{'#' * 100}")
         print(f"Processing folder {folder}")
 
-        # create path folder/results if not exists
         folder_results = folder / "results"
         os.makedirs(folder_results, exist_ok=True)
 
-
-        dict_QUR = {}
-        dict_QUR_DE = {}
-        dict_QUR_DE_complexity_1 = {}
-        dict_QUR_DE_complexity_2 = {}
-        dict_QUR_DE_complexity_3 = {}
-        dict_QUR_NLPE = {}
-        dict_QUR_NLPE_complexity_1 = {}
-        dict_QUR_NLPE_complexity_2 = {}
-        dict_QUR_NLPE_complexity_3 = {}
-        dict_QUR_QP = {}
-        dict_QUR_QP_complexity_1 = {}
-        dict_QUR_QP_complexity_2 = {}
-        dict_QUR_QP_complexity_3 = {}
-        dict_QUR_PL = {}
-        dict_QUR_PL_complexity_1 = {}
-        dict_QUR_PL_complexity_2 = {}
-        dict_QUR_PL_complexity_3 = {}
-        list_len = []
-        dict_QUR_DED = {}
-        dict_QUR_DED_complexity_1 = {}
-        dict_QUR_DED_complexity_2 = {}
-        dict_QUR_DED_complexity_3 = {}
-
-        dict_UR = {}
-        dict_UR_DE = {}
-        dict_UR_DE_complexity_1 = {}
-        dict_UR_DE_complexity_2 = {}
-        dict_UR_DE_complexity_3 = {}
-        dict_UR_PAGE_outpage = {}
-        dict_UR_PAGE_inpage = {}
-        dict_UR_PAGE_DE = {}
-        dict_UR_PAGE_DE_complexity_1 = {}
-        dict_UR_PAGE_DE_complexity_2 = {}
-        dict_UR_PAGE_DE_complexity_3 = {}
-        dict_UR_NLPE = {}
-        dict_UR_NLPE_complexity_1 = {}
-        dict_UR_NLPE_complexity_2 = {}
-        dict_UR_NLPE_complexity_3 = {}
-        dict_UR_PAGE_QP = {}
-        dict_UR_PAGE_QP_complexity_1 = {}
-        dict_UR_PAGE_QP_complexity_2 = {}
-        dict_UR_PAGE_QP_complexity_3 = {}
-        dict_UR_PAGE_DED = {}
-        dict_UR_PAGE_DED_complexity_1 = {}
-        dict_UR_PAGE_DED_complexity_2 = {}
-        dict_UR_PAGE_DED_complexity_3 = {}
-
+        # accum[metric_name][total|c1|c2|c3][model_name] = values
+        accum = {
+            name: {"total": {}, "c1": {}, "c2": {}, "c3": {}}
+            for name in [
+                "QUR_DE", "QUR_NLPE", "QUR_QP", "QUR_PL", "QUR_DED",
+                "UR_DE", "UR_NLPE", "UR_PAGE_DE", "UR_PAGE_QP", "UR_PAGE_DED",
+            ]
+        }
+        # Flat metrics (no categorical breakdown, only total + complexity slices)
+        accum["QUR"] = {"total": {}}
+        accum["UR"] = {"total": {}}
+        accum["UR_PAGE_inpage"] = {"total": {}}
+        accum["UR_PAGE_outpage"] = {"total": {}}
+        list_len = []  # page-count axis for QUR_PL; set by the last model processed
 
         processed_models = []
-        folder_augmented = folder / "augmented"
-        for result_file in folder_augmented.iterdir():
+        for result_file in (folder / "augmented").iterdir():
             print("-" * 100)
-
-            file_path = result_file
-            if not file_path.exists():
-                print(f"Warning: File {result_file} not found, skipping...")
-                continue
-
             try:
-                model_name = result_file.stem.split("/")[-1].split("_")[0]
-                print(f"Model name: {model_name}")
+                result = _process_model_file(result_file, entity_verifier, dataset, images_path)
+                if result is None:
+                    continue
+                model_name, metrics, list_len = result
                 processed_models.append(model_name)
-
-                with open(file_path, "r") as f:
-                    data = json.load(f)
-                    results = data.get("corrupted_questions", [])
-                    if not results:
-                        print(f"Warning: No corrupted questions found in {result_file}")
-                        continue
-
-                    print(f"Processing {result_file}")
-                    print(f"Found {len(results)} questions")
-
-                # model_name = result_file.split("_")[0]
-                analyzer = VQAAnalyzer(
-                    results,
-                    entity_verifier,
-                    dataset,
-                    debug=False,
-                    images_path=images_path,
-                )
-                metrics = analyzer.calculate_metrics()
-
-                # print(f"- Metrics -")
-
-                for key, value in metrics.items():
-                    if key == "QUR":
-                        # print(f"Processing QUR")
-                        (
-                            correct_unable_total_corrupted,
-                            correct_unable_complexity_1_total_corrupted,
-                            correct_unable_complexity_2_total_corrupted,
-                            correct_unable_complexity_3_total_corrupted,
-                            weight_unable
-                        ) = value
-                        dict_QUR[model_name] = [
-                            correct_unable_total_corrupted,
-                            correct_unable_complexity_1_total_corrupted,
-                            correct_unable_complexity_2_total_corrupted,
-                            correct_unable_complexity_3_total_corrupted,
-                            weight_unable,
-                        ]
-
-                    if key == "QUR_DE":
-                        # print(f"Processing QUR_DE")
-                        (
-                            layout_dict,
-                            layout_dict_complexity_1,
-                            layout_dict_complexity_2,
-                            layout_dict_complexity_3,
-                        ) = value
-                        dict_QUR_DE[model_name] = layout_dict.values()
-                        dict_QUR_DE_complexity_1[model_name] = layout_dict_complexity_1.values()
-                        dict_QUR_DE_complexity_2[model_name] = layout_dict_complexity_2.values()
-                        dict_QUR_DE_complexity_3[model_name] = layout_dict_complexity_3.values()
-
-                    if key == "QUR_NLPE":
-                        # print(f"Processing QUR_NLPE")
-                        (
-                            entity_dict,
-                            entity_dict_complexity_1,
-                            entity_dict_complexity_2,
-                            entity_dict_complexity_3,
-                        ) = value
-                        dict_QUR_NLPE[model_name] = entity_dict.values()
-                        dict_QUR_NLPE_complexity_1[model_name] = entity_dict_complexity_1.values()
-                        dict_QUR_NLPE_complexity_2[model_name] = entity_dict_complexity_2.values()
-                        dict_QUR_NLPE_complexity_3[model_name] = entity_dict_complexity_3.values()
-
-                    if key == "QUR_QP":
-                        # print(f"Processing QUR_QP")
-                        (
-                            pos_dict,
-                            pos_dict_complexity_1,
-                            pos_dict_complexity_2,
-                            pos_dict_complexity_3,
-                        ) = value
-                        dict_QUR_QP[model_name] = pos_dict.values()
-                        dict_QUR_QP_complexity_1[model_name] = pos_dict_complexity_1.values()
-                        dict_QUR_QP_complexity_2[model_name] = pos_dict_complexity_2.values()
-                        dict_QUR_QP_complexity_3[model_name] = pos_dict_complexity_3.values()
-
-                    if key == "QUR_PL":
-                        # print(f"Processing QUR_PL")
-                        (
-                            len_dict,
-                            len_dict_complexity_1,
-                            len_dict_complexity_2,
-                            len_dict_complexity_3,
-                            list_len
-                        ) = value
-                        dict_QUR_PL[model_name] = len_dict.values()
-                        dict_QUR_PL_complexity_1[model_name] = len_dict_complexity_1.values()
-                        dict_QUR_PL_complexity_2[model_name] = len_dict_complexity_2.values()
-                        dict_QUR_PL_complexity_3[model_name] = len_dict_complexity_3.values()
-
-                    if key == "QUR_DED":
-                        # print(f"Processing QUR_DED")
-                        (
-                            ded_dict,
-                            ded_dict_complexity_1,
-                            ded_dict_complexity_2,
-                            ded_dict_complexity_3,
-                        ) = value
-                        dict_QUR_DED[model_name] = ded_dict.values()
-                        dict_QUR_DED_complexity_1[model_name] = ded_dict_complexity_1.values()
-                        dict_QUR_DED_complexity_2[model_name] = ded_dict_complexity_2.values()
-                        dict_QUR_DED_complexity_3[model_name] = ded_dict_complexity_3.values()
-                        
-                    if key == "UR":
-                        # print(f"Processing UR")
-                        (
-                            tot_unable_count_total_answers,
-                            tot_unable_count_complexity_1_total_answers_complexity_1,
-                            tot_unable_count_complexity_2_total_answers_complexity_2,
-                            tot_unable_count_complexity_3_total_answers_complexity_3,
-                        ) = value
-                        dict_UR[model_name] = [
-                            tot_unable_count_total_answers,
-                            tot_unable_count_complexity_1_total_answers_complexity_1,
-                            tot_unable_count_complexity_2_total_answers_complexity_2,
-                            tot_unable_count_complexity_3_total_answers_complexity_3,
-                        ]
-
-                    if key == "UR_DE":
-                        # print(f"Processing UR_DE")
-                        (
-                            layout_dict,
-                            layout_dict_complexity_1,
-                            layout_dict_complexity_2,
-                            layout_dict_complexity_3,
-                        ) = value
-                        dict_UR_DE[model_name] = layout_dict.values()
-                        dict_UR_DE_complexity_1[model_name] = layout_dict_complexity_1.values()
-                        dict_UR_DE_complexity_2[model_name] = layout_dict_complexity_2.values()
-                        dict_UR_DE_complexity_3[model_name] = layout_dict_complexity_3.values()
-                    
-                    if key == "UR_PAGE":
-                        # print(f"Processing UR_PAGE")
-                        (
-                            inpage,
-                            inpage_complexity_1,
-                            inpage_complexity_2,
-                            inpage_complexity_3,
-                            outpage,
-                            outpage_complexity_1,   
-                            outpage_complexity_2,
-                            outpage_complexity_3,
-                        ) = value
-                        dict_UR_PAGE_inpage[model_name] = [
-                            inpage,
-                            inpage_complexity_1,
-                            inpage_complexity_2,
-                            inpage_complexity_3,
-                        ]
-                        dict_UR_PAGE_outpage[model_name] = [
-                            outpage,
-                            outpage_complexity_1,
-                            outpage_complexity_2,
-                            outpage_complexity_3,
-                        ] 
-                    
-                    if key == "UR_NLPE":
-                        # print(f"Processing UR_NLPE")
-                        (
-                            entity_dict,
-                            entity_dict_complexity_1,
-                            entity_dict_complexity_2,
-                            entity_dict_complexity_3,
-                        ) = value
-                        dict_UR_NLPE[model_name] = entity_dict.values()
-                        dict_UR_NLPE_complexity_1[model_name] = entity_dict_complexity_1.values()
-                        dict_UR_NLPE_complexity_2[model_name] = entity_dict_complexity_2.values()
-                        dict_UR_NLPE_complexity_3[model_name] = entity_dict_complexity_3.values()
-                    
-                    if key == "UR_PAGE_DE":
-                        # print(f"Processing UR_PAGE_DE")
-                        (
-                            layout_dict,
-                            layout_dict_complexity_1,
-                            layout_dict_complexity_2,
-                            layout_dict_complexity_3,
-                        ) = value
-                        dict_UR_PAGE_DE[model_name] = layout_dict.values()
-                        dict_UR_PAGE_DE_complexity_1[model_name] = layout_dict_complexity_1.values()
-                        dict_UR_PAGE_DE_complexity_2[model_name] = layout_dict_complexity_2.values()
-                        dict_UR_PAGE_DE_complexity_3[model_name] = layout_dict_complexity_3.values()
-
-                    if key == "UR_PAGE_QP":
-                        # print(f"Processing UR_PAGE_QP")
-                        (
-                            pos_dict,
-                            pos_dict_complexity_1,
-                            pos_dict_complexity_2,
-                            pos_dict_complexity_3,
-                        ) = value
-                        dict_UR_PAGE_QP[model_name] = pos_dict.values()
-                        dict_UR_PAGE_QP_complexity_1[model_name] = pos_dict_complexity_1.values()
-                        dict_UR_PAGE_QP_complexity_2[model_name] = pos_dict_complexity_2.values()
-                        dict_UR_PAGE_QP_complexity_3[model_name] = pos_dict_complexity_3.values()
-
-                    if key == "UR_PAGE_DED":
-                        # print(f"Processing UR_PAGE_DED")
-                        (
-                            ded_dict,
-                            ded_dict_complexity_1,
-                            ded_dict_complexity_2,
-                            ded_dict_complexity_3,
-                        ) = value
-                        dict_UR_PAGE_DED[model_name] = ded_dict.values()
-                        dict_UR_PAGE_DED_complexity_1[model_name] = ded_dict_complexity_1.values()
-                        dict_UR_PAGE_DED_complexity_2[model_name] = ded_dict_complexity_2.values()
-                        dict_UR_PAGE_DED_complexity_3[model_name] = ded_dict_complexity_3.values()
-
+                _collect_metrics_into_accum(accum, model_name, metrics)
             except Exception as e:
                 print(f"Error processing {result_file}: {e}")
-                # continue
-
-            # break
 
         print(f"Saving files")
         print(f"Processed models: {processed_models}")
 
-        save_metric(folder_results, "QUR", dict_QUR, ["QUR", "QUR_C1", "QUR_C2", "QUR_C3", "QUR_weighted"])
-        save_metric(folder_results, "QUR_DE", dict_QUR_DE, LAYOUT_TYPES, [dict_QUR_DE_complexity_1, dict_QUR_DE_complexity_2, dict_QUR_DE_complexity_3])
-        save_metric(folder_results, "QUR_NLPE", dict_QUR_NLPE, MACRO_ENTITY_TYPES, [dict_QUR_NLPE_complexity_1, dict_QUR_NLPE_complexity_2, dict_QUR_NLPE_complexity_3])
-        save_metric(folder_results, "QUR_QP", dict_QUR_QP, PAGE_LAYOUT, [dict_QUR_QP_complexity_1, dict_QUR_QP_complexity_2, dict_QUR_QP_complexity_3])
-        save_metric(folder_results, "QUR_PL", dict_QUR_PL, list_len, [dict_QUR_PL_complexity_1, dict_QUR_PL_complexity_2, dict_QUR_PL_complexity_3])
-        save_metric(folder_results, "QUR_DED", dict_QUR_DED, ["<15", "15-25", ">25"], [dict_QUR_DED_complexity_1, dict_QUR_DED_complexity_2, dict_QUR_DED_complexity_3])
-        save_metric(folder_results, "UR", dict_UR, ["UR", "UR_C1", "UR_C2", "UR_C3"])
-        save_metric(folder_results, "UR_DE", dict_UR_DE, LAYOUT_TYPES, [dict_UR_DE_complexity_1, dict_UR_DE_complexity_2, dict_UR_DE_complexity_3])
-        save_metric(folder_results, "UR_PAGE_inpage", dict_UR_PAGE_inpage, ["UR_inpage", "UR_inpage_C1", "UR_inpage_C2", "UR_inpage_C3"])
-        save_metric(folder_results, "UR_PAGE_outpage", dict_UR_PAGE_outpage, ["UR_outpage", "UR_outpage_C1", "UR_outpage_C2", "UR_outpage_C3"])
-        save_metric(folder_results, "UR_PAGE_DE", dict_UR_PAGE_DE, LAYOUT_TYPES, [dict_UR_PAGE_DE_complexity_1, dict_UR_PAGE_DE_complexity_2, dict_UR_PAGE_DE_complexity_3])
-        save_metric(folder_results, "UR_NLPE", dict_UR_NLPE, MACRO_ENTITY_TYPES, [dict_UR_NLPE_complexity_1, dict_UR_NLPE_complexity_2, dict_UR_NLPE_complexity_3])
-        save_metric(folder_results, "UR_PAGE_QP", dict_UR_PAGE_QP, PAGE_LAYOUT, [dict_UR_PAGE_QP_complexity_1, dict_UR_PAGE_QP_complexity_2, dict_UR_PAGE_QP_complexity_3])
-        save_metric(folder_results, "UR_PAGE_DED", dict_UR_PAGE_DED, ["0", "1", ">1"], [dict_UR_PAGE_DED_complexity_1, dict_UR_PAGE_DED_complexity_2, dict_UR_PAGE_DED_complexity_3])
-        
-        
+        a = accum
+        save_metric(folder_results, "QUR",           a["QUR"]["total"],           ["QUR", "QUR_C1", "QUR_C2", "QUR_C3", "QUR_weighted"])
+        save_metric(folder_results, "QUR_DE",         a["QUR_DE"]["total"],         LAYOUT_TYPES,       [a["QUR_DE"]["c1"],       a["QUR_DE"]["c2"],       a["QUR_DE"]["c3"]])
+        save_metric(folder_results, "QUR_NLPE",       a["QUR_NLPE"]["total"],       MACRO_ENTITY_TYPES, [a["QUR_NLPE"]["c1"],     a["QUR_NLPE"]["c2"],     a["QUR_NLPE"]["c3"]])
+        save_metric(folder_results, "QUR_QP",         a["QUR_QP"]["total"],         PAGE_LAYOUT,        [a["QUR_QP"]["c1"],       a["QUR_QP"]["c2"],       a["QUR_QP"]["c3"]])
+        save_metric(folder_results, "QUR_PL",         a["QUR_PL"]["total"],         list_len,           [a["QUR_PL"]["c1"],       a["QUR_PL"]["c2"],       a["QUR_PL"]["c3"]])
+        save_metric(folder_results, "QUR_DED",        a["QUR_DED"]["total"],        ["<15", "15-25", ">25"], [a["QUR_DED"]["c1"], a["QUR_DED"]["c2"],      a["QUR_DED"]["c3"]])
+        save_metric(folder_results, "UR",             a["UR"]["total"],             ["UR", "UR_C1", "UR_C2", "UR_C3"])
+        save_metric(folder_results, "UR_DE",          a["UR_DE"]["total"],          LAYOUT_TYPES,       [a["UR_DE"]["c1"],        a["UR_DE"]["c2"],        a["UR_DE"]["c3"]])
+        save_metric(folder_results, "UR_PAGE_inpage", a["UR_PAGE_inpage"]["total"], ["UR_inpage",  "UR_inpage_C1",  "UR_inpage_C2",  "UR_inpage_C3"])
+        save_metric(folder_results, "UR_PAGE_outpage",a["UR_PAGE_outpage"]["total"],["UR_outpage", "UR_outpage_C1", "UR_outpage_C2", "UR_outpage_C3"])
+        save_metric(folder_results, "UR_PAGE_DE",     a["UR_PAGE_DE"]["total"],     LAYOUT_TYPES,       [a["UR_PAGE_DE"]["c1"],   a["UR_PAGE_DE"]["c2"],   a["UR_PAGE_DE"]["c3"]])
+        save_metric(folder_results, "UR_NLPE",        a["UR_NLPE"]["total"],        MACRO_ENTITY_TYPES, [a["UR_NLPE"]["c1"],      a["UR_NLPE"]["c2"],      a["UR_NLPE"]["c3"]])
+        save_metric(folder_results, "UR_PAGE_QP",     a["UR_PAGE_QP"]["total"],     PAGE_LAYOUT,        [a["UR_PAGE_QP"]["c1"],   a["UR_PAGE_QP"]["c2"],   a["UR_PAGE_QP"]["c3"]])
+        save_metric(folder_results, "UR_PAGE_DED",    a["UR_PAGE_DED"]["total"],    ["0", "1", ">1"],   [a["UR_PAGE_DED"]["c1"],  a["UR_PAGE_DED"]["c2"],  a["UR_PAGE_DED"]["c3"]])
+
         print(f"Files saved in {folder_results}")
         print("-" * 100)
-
-        # break
 
         
 
