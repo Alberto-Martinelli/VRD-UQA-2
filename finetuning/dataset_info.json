@@ -1,0 +1,12 @@
+{
+  "vrd_uqa_smoke": {
+    "file_name": "train.json",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "images": "images"
+    }
+  }
+}

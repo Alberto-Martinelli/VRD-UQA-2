@@ -16,9 +16,10 @@ class AnswerabilityVerifier:
     def __init__(self, config_path=None):
         # Load configuration
         if config_path is None:
-            config_path = "code/corruption-scripts/config.json"
+            config_path = "corruption-scripts/config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
+        print(f"Loaded configuration from {config_path}")
 
         verification_config = config.get("verification", {})
         provider = verification_config.get("provider", "openai")
@@ -47,9 +48,7 @@ class AnswerabilityVerifier:
         self.api_calls = deque()  # Store timestamps of API calls
         self.max_calls_per_minute = 15
         self.call_window = 60  # seconds
-
     
-
     @staticmethod
     def encode_image(image_path):
         with open(image_path, "rb") as image_file:
@@ -223,23 +222,19 @@ class AnswerabilityVerifier:
         num_to_verify = int(total_questions * self.verification_percentage / 100)
 
         # Randomly select questions to verify
-        questions_to_verify = random.sample(range(total_questions), num_to_verify)
-
+        question_IDs_to_verify = random.sample(range(total_questions), num_to_verify)
 
         # Create new list for verified questions
         verified_questions = []
 
         # Process selected questions
-        for current_idx, question_idx in enumerate(questions_to_verify, 1):
-            item = data["corrupted_questions"][question_idx]
+        for current_idx, question_id in enumerate(question_IDs_to_verify, 1):
+            item = data["corrupted_questions"][question_id]
             question = item["corrupted_question"]
-
-
 
             # Get relevant pages to check
             relevant_pages = self.get_relevant_pages(item)
-            
-
+        
             # Get image paths only for relevant pages
             image_paths = []
             for page_id, page_info in item["layout_analysis"]["pages"].items():
