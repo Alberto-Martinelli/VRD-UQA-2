@@ -32,8 +32,8 @@
     "name": "Qwen/Qwen2.5-7B"
   },
   "verification": {
-    "verification_input_file": "./corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_cleaned.json",
-    "verification_output_file": "./corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_verified.json",
+    "verification_input_file": "data/MPDocVQA/MPDocVQA_sample/MPDocVQA_unanswerable_corrupted_questions_cleaned.json",
+    "verification_output_file": "./MPDocVQA_unanswerable_corrupted_questions_verified.json",
     "provider": "local",
     "verification_percentage": 100,
     "log_file": "/terminal_output.json"
