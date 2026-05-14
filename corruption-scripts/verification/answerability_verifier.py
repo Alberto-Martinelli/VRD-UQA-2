@@ -8,8 +8,13 @@ import json
 import argparse
 import random
 import time
+import torchvision.transforms as transforms
 from collections import deque
 from datetime import datetime
+from transformers import AutoTokenizer, AutoModel
+
+GEMINI_MODEL = "gemini-2.5-flash"
+LOCAL_MODEL = "OpenGVLab/InternVL3_5-8B"
 
 
 class AnswerabilityVerifier:
@@ -22,33 +27,104 @@ class AnswerabilityVerifier:
         print(f"Loaded configuration from {config_path}")
 
         verification_config = config.get("verification", {})
-        provider = verification_config.get("provider", "openai")
-        api_key = verification_config.get("api_key")
+        
         self.model_name = verification_config.get("model_name", " ")
         self.verification_percentage = verification_config.get(
             "verification_percentage", 100
         )
 
-        genai.configure(api_key=api_key)
+        self.provider = verification_config.get("provider", "local")
+        if self.provider == 'gemini':
+            api_key = verification_config.get("api_key")
+            genai.configure(api_key=api_key)
 
-        self.default_provider = provider
+            # Add rate limiting properties
+            self.api_calls = deque()  # Store timestamps of API calls
+            self.max_calls_per_minute = 15
+            self.call_window = 60  # seconds
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(
-            f"AnswerabilityVerifier using device: {self.device} with provider: {provider}"
+            f"AnswerabilityVerifier using device: {self.device} with provider: {self.provider}"
         )
         print(f"Will verify {self.verification_percentage}% of questions")
+
+        if self.provider == 'local':
+            self._init_local_model(verification_config)
 
         # Get input and output file paths from config
         self.input_file = verification_config.get("verification_input_file")
         self.output_file = verification_config.get("verification_output_file")
 
         # Get log file path from config
-
-        # Add rate limiting properties
-        self.api_calls = deque()  # Store timestamps of API calls
-        self.max_calls_per_minute = 15
-        self.call_window = 60  # seconds
     
+    def _init_local_model(self, verification_config):
+        model_name = LOCAL_MODEL
+        cache_dir = os.environ.get("HF_HOME", "/data1/hf_cache/models")
+        self.local_input_size = 448
+        self.local_max_num = 12
+        self.local_max_tokens = 512
+
+        print(f"Loading local model {model_name}...")
+        self.local_tokenizer = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True, use_fast=False, cache_dir=cache_dir
+        )
+        self.local_model = AutoModel.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True,
+            use_flash_attn=True,
+            low_cpu_mem_usage=True,
+            cache_dir=cache_dir,
+        ).eval()
+
+        self.local_transform = transforms.Compose([
+            transforms.Lambda(lambda img: img.convert("RGB") if img.mode != "RGB" else img),
+            transforms.Resize((input_size, input_size), interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        print("Local model loaded successfully")
+
+    def _load_image_local(self, image_path):
+        image = PIL.Image.open(image_path).convert("RGB")
+        tiles = self._dynamic_preprocess(image, image_size=self.local_input_size, use_thumbnail=True, max_num=self.local_max_num)
+        pixel_values = torch.stack([self.local_transform(t) for t in tiles])
+        return pixel_values.to(torch.bfloat16)
+
+    def _dynamic_preprocess(self, image, min_num=1, max_num=12, image_size=448, use_thumbnail=False):
+        orig_width, orig_height = image.size
+        aspect_ratio = orig_width / orig_height
+        target_ratios = sorted(set(
+            (i, j)
+            for n in range(min_num, max_num + 1)
+            for i in range(1, n + 1)
+            for j in range(1, n + 1)
+            if min_num <= i * j <= max_num
+        ), key=lambda x: x[0] * x[1])
+
+        best_ratio = (1, 1)
+        best_diff = float("inf")
+        area = orig_width * orig_height
+        for ratio in target_ratios:
+            diff = abs(aspect_ratio - ratio[0] / ratio[1])
+            if diff < best_diff or (diff == best_diff and area > 0.5 * image_size * image_size * ratio[0] * ratio[1]):
+                best_diff = diff
+                best_ratio = ratio
+
+        tw, th = image_size * best_ratio[0], image_size * best_ratio[1]
+        resized = image.resize((tw, th))
+        tiles = []
+        for i in range(best_ratio[0] * best_ratio[1]):
+            col = i % best_ratio[0]
+            row = i // best_ratio[0]
+            box = (col * image_size, row * image_size, (col + 1) * image_size, (row + 1) * image_size)
+            tiles.append(resized.crop(box))
+        if use_thumbnail and len(tiles) != 1:
+            tiles.append(image.resize((image_size, image_size)))
+        return tiles
+
     @staticmethod
     def encode_image(image_path):
         with open(image_path, "rb") as image_file:
@@ -71,7 +147,7 @@ class AnswerabilityVerifier:
         # Add current timestamp to our queue
         self.api_calls.append(now)
 
-    def verify_answerability(self, question, image_path, original_entities=None, corrupted_entities=None, ocr_text="", provider=None):
+    def verify_answerability(self, question, image_path, original_entities=None, corrupted_entities=None, ocr_text=""):
         """
         Verify if a question is answerable based on the image content.
         Args:
@@ -80,19 +156,11 @@ class AnswerabilityVerifier:
             original_entities (list, optional): List of original entities
             corrupted_entities (list, optional): List of corrupted entities
             ocr_text (str, optional): OCR text from the image
-            provider (str, optional): The provider to use ('openai' or 'gemini')
         """
-        # Use default provider if none specified
-        provider = provider or self.default_provider
 
         # Add rate limiting for Gemini calls
-        if provider == "gemini" or (
-            provider is None and self.default_provider == "gemini"
-        ):
+        if self.provider == "gemini":
             self._check_rate_limit()
-
-       
-        if provider == "gemini":
             try:
                 image = PIL.Image.open(image_path)
                 model = genai.GenerativeModel(model_name=self.model_name)
@@ -150,20 +218,75 @@ class AnswerabilityVerifier:
                         "question_answer": "Error parsing response",
                     }
 
-            except Exception as e:
+            except Exception:
+                return False
+
+        elif self.provider == "local":
+            try:
+                entities_string = ""
+                if original_entities and corrupted_entities:
+                    for orig, corr in zip(original_entities, corrupted_entities):
+                        entities_string += f"{orig} --> {corr}\n"
+
+                entities_section = ""
+                if entities_string:
+                    entities_section = (
+                        "In addition here we provide the original entities found in the question "
+                        "and the corrupted ones in order to allow you to place special focus on the corrupted ones. "
+                        f"The entities are reported with the format: ORIGINAL --> CORRUPTED:\n{entities_string}"
+                    )
+
+                prompt = (
+                    "You are an expert in Visual Question Answering on Document images. "
+                    "We are working on a project to verify the answerability of questions based on the information provided in a given image. "
+                    "In detail we have taken questions from a multipage VQA dataset and we have corrupted the questions based on the entities found in the whole document associated to the question. "
+                    "Now, given the corrupted question and each image of the document, we want to verify if the question is answerable based solely on the information provided in the given image. "
+                    "Your task is to help us to determine if the following corrupted question is answerable based solely on the information provided in the given image. "
+                    "The question answer must be explicitly stated in the image. "
+                    f"In order to have a better document understanding, we extracted the following OCR text from the document:\n{ocr_text}\n\n"
+                    f"{entities_section}\n\n"
+                    "Respond with a structured response in JSON format with the following fields:\n"
+                    "{\n"
+                    '    "verification_result": "true if the question is answerable based solely on the information provided in the given image, or \'false\' if it\'s not answerable",\n'
+                    '    "question_answer": "The answer to the question or only the words \'not found\' if the answer is not explicitly stated in the image"\n'
+                    "}\n"
+                    "Return only the JSON response. Without any other text or explanation.\n"
+                    f"\nQuestion: {question}"
+                )
+
+                pixel_values = self._load_image_local(image_path).to(self.device)
+                query = f"<image>\n{prompt}"
+                generation_config = dict(max_new_tokens=self.local_max_tokens, do_sample=False)
+                raw_response, _ = self.local_model.chat(
+                    self.local_tokenizer, pixel_values, query, generation_config,
+                    history=None, return_history=True,
+                )
+
+                clean_response = raw_response.strip()
+                if clean_response.startswith("```"):
+                    clean_response = clean_response.split("```")[1]
+                if clean_response.startswith("json"):
+                    clean_response = clean_response[4:]
+                clean_response = clean_response.strip()
+
+                try:
+                    json_response = json.loads(clean_response)
+                    response = json_response.get("verification_result", "false").lower()
+                    self.last_response = json_response
+                except json.JSONDecodeError:
+                    response = "false"
+                    self.last_response = {
+                        "verification_result": "False",
+                        "question_answer": "Error parsing response",
+                    }
+
+            except Exception:
                 return False
 
         else:
-            raise ValueError(f"Unsupported provider: {provider}")
+            raise ValueError(f"Unsupported provider: {self.provider}")
 
-        result_message = "Answerable" if response == "true" else "Not Answerable"
         return response == "true"
-
-    def verify_unanswerable(self, question, image_paths):
-        for image_path in image_paths:
-            if not self.verify_answerability(question, image_path):
-                return False  # Question is answerable for at least one image
-        return True  # Question is unanswerable for all images
 
     def get_sorted_ocr_text(self, layout_analysis):
         """Extract and sort OCR text based on y-position from layout analysis"""
@@ -238,13 +361,15 @@ class AnswerabilityVerifier:
             # Get image paths only for relevant pages
             image_paths = []
             for page_id, page_info in item["layout_analysis"]["pages"].items():
-                if page_id in relevant_pages:
-                    image_path = page_info["image_path"]
-                    if os.path.exists(image_path):
-                        # Get OCR text for this page
-                        layout_analysis = page_info.get("layout_analysis", {})
-                        ocr_text = self.get_sorted_ocr_text(layout_analysis)
-                        image_paths.append((image_path, ocr_text))
+                if page_id not in relevant_pages:
+                    continue
+                image_path = page_info["image_path"]
+                if not os.path.exists(image_path):
+                    continue
+                # Get OCR text for this page
+                layout_analysis = page_info.get("layout_analysis", {})
+                ocr_text = self.get_sorted_ocr_text(layout_analysis)
+                image_paths.append((image_path, ocr_text))
 
             if not image_paths:
                 continue

@@ -32,12 +32,10 @@
     "name": "Qwen/Qwen2.5-1.5B-Instruct"
   },
   "verification": {
-    "provider": "gemini",
-    "api_key": "",
     "verification_input_file": "./corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_cleaned.json",
     "verification_output_file": "./corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_verified.json",
+    "provider": "local",
     "verification_percentage": 100,
-    "model_name": "gemini-2.5-flash",
     "log_file": "/terminal_output.json"
   }
 }
