@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=4 # 4 cores per process
 #SBATCH --mem=64G # RAM memory
 #SBATCH --time=0-23:59:00 # max wall time (D-HH:MM:SS)
-#SBATCH --partition=gpu_v100_ext # partition name
+#SBATCH --partition=gpu_a40 # partition name
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-Verification-%j.out # output file name
 
