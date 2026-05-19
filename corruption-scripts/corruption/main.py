@@ -54,7 +54,7 @@ def main(config_path=None):
     )
     logging.info("\n")
 
-    df_to_corrupt = load_data(params)
+    df_to_corrupt, base_image_dir = load_data(params)
 
     logging.info("\n")
     logging.info(
@@ -86,7 +86,7 @@ def main(config_path=None):
     )
     logging.info("\n")
 
-    corrupt_questions(params, entity_identifier)
+    corrupt_questions(params, entity_identifier, base_image_dir)
 
     logging.info("\n")
     logging.info(

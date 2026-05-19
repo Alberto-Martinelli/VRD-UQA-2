@@ -226,8 +226,11 @@ def clean_corrupted_questions(input_file, output_file):
         
         filtered_questions.append(question)
     
-    # Create new JSON with filtered questions
-    cleaned_data = {'corrupted_questions': filtered_questions}
+    # Create new JSON with filtered questions, preserving base_image_dir
+    cleaned_data = {
+        'base_image_dir': data.get('base_image_dir'),
+        'corrupted_questions': filtered_questions,
+    }
     
     # Save to new JSON file
     with open(output_file, 'w') as f:
@@ -259,12 +262,13 @@ def extract_corruption_fields(x):
 def load_data(params):
     raw_dataset_dict = DataLoader.load_dataset(params["base_path"], params["split"], params["dataset_name"], params["dataset_json_path"])
     logging.info(f"Total questions in original dataset: {len(raw_dataset_dict['data'])}")
-    questions_df = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"], params["split"])
+    questions_df, base_image_dir = DataLoader.create_dataframe(raw_dataset_dict, params["dataset_name"], params["base_path"], params["dataset_json_path"], params["split"])
     logging.info(f"Total questions loaded: {len(questions_df)}")
+    logging.info(f"Base image dir: {base_image_dir}")
 
     df_to_corrupt = sample_questions_to_corrupt(questions_df, params["percentage"])
     # df_to_corrupt.to_csv("df_to_corrupt.csv")
-    return df_to_corrupt
+    return df_to_corrupt, base_image_dir
 
 # STEP 2 (entity_identifier.py)
 def identify_all_entities(params, df_to_corrupt):
@@ -313,7 +317,7 @@ def create_augmented_dataset(params, df_to_corrupt):
     return df_to_corrupt
 
 # STEP 4 CORRUPTION (in_context_modifier.py)
-def corrupt_questions(params, entity_identifier):
+def corrupt_questions(params, entity_identifier, base_image_dir):
     """Step 4: Load augmented dataset, corrupt questions, save results."""
 
     # --- 4a. Load augmented dataset and enrich with answer locations + entities ---
@@ -395,7 +399,15 @@ def corrupt_questions(params, entity_identifier):
 
     logging.info(f"\nSaving corrupted questions to file {params['output_corrupted']}...")
     with open(params["output_corrupted"], "w") as f:
-        json.dump({"corrupted_questions": records, "metadata": metadata}, f, indent=2)
+        json.dump(
+            {
+                "base_image_dir": base_image_dir,
+                "corrupted_questions": records,
+                "metadata": metadata,
+            },
+            f,
+            indent=2,
+        )
 
     # Remove corruptions that are identical to the original or have bad formatting
     removed = clean_corrupted_questions(params["output_corrupted"], params["output_corrupted_cleaned"])

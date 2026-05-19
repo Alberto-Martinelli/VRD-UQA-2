@@ -21,15 +21,16 @@ class DataLoader:
             raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
     @staticmethod
-    def create_dataframe(raw_dataset_dict: dict, dataset_name: str, base_path: str, dataset_json_path: str, split_type: str) -> pd.DataFrame:
+    def create_dataframe(raw_dataset_dict: dict, dataset_name: str, base_path: str, dataset_json_path: str, split_type: str):
         if dataset_name == "MPDocVQA":
             path = os.path.join(base_path, dataset_json_path)
+            base_image_dir = os.path.join(path, "images")
             df = pd.DataFrame(raw_dataset_dict["data"])
-            df["docId"] = df["doc_id"] 
+            df["docId"] = df["doc_id"]
             df["questionId"] = df["questionId"].astype(str)
             df["document"] = df["page_ids"].apply(
                 lambda x: [
-                    os.path.join(path, "images", f"{page_id}.jpg") for page_id in x
+                    os.path.join(base_image_dir, f"{page_id}.jpg") for page_id in x
                 ]
             )
             df["data_split"] = df["data_split"]
@@ -66,21 +67,21 @@ class DataLoader:
             if "PDF" in str(sample_doc):
                 # Works perfectly for standard HPC/Huggingface downloaded layouts
                 base_extracted_path = sample_doc.rsplit("PDF", 1)[0]
-                dude_images_dir = os.path.join(base_extracted_path, "DUDE_train-val-test_binaries", "images", "train")
+                base_image_dir = os.path.join(base_extracted_path, "DUDE_train-val-test_binaries", "images", "train")
             else:
                 # Fallback for Mac setups using local images strictly within dataset_json_path
-                dude_images_dir = os.path.join(base_path, dataset_json_path, "images", "train")
+                base_image_dir = os.path.join(base_path, dataset_json_path, "images", "train")
 
             # Get document pages using directory scanning
             def get_document_pages(doc_id):
                 pages = []
-                if os.path.exists(dude_images_dir):
-                    for filename in sorted(os.listdir(dude_images_dir)):
+                if os.path.exists(base_image_dir):
+                    for filename in sorted(os.listdir(base_image_dir)):
                         # Look for any image file starting with doc_id (even without an underscore)
                         if filename.startswith(doc_id) and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
                             pages.append(filename)
                 else:
-                    logging.error(f"Warning: dude_images_dir does not exist at {dude_images_dir}!")
+                    logging.error(f"Warning: base_image_dir does not exist at {base_image_dir}!")
                 return pages
 
             # Create necessary columns
@@ -89,15 +90,15 @@ class DataLoader:
             # Warn if 0 page_ids are found
             empty_docs = df[df["page_ids"].map(len) == 0]
             if not empty_docs.empty:
-                logging.warning(f"Found {len(empty_docs)} documents with 0 page_ids in {dude_images_dir}!")
-                if os.path.exists(dude_images_dir):
-                    sample_files = os.listdir(dude_images_dir)[:10]
+                logging.warning(f"Found {len(empty_docs)} documents with 0 page_ids in {base_image_dir}!")
+                if os.path.exists(base_image_dir):
+                    sample_files = os.listdir(base_image_dir)[:10]
                     logging.warning(f"Sample files actually present in directory: {sample_files}")
                     logging.warning(f"We were looking for files starting with doc_id like: {df.iloc[0]['docId']}")
             
             df["document"] = df["page_ids"].apply(
                 lambda x: [
-                    os.path.join(dude_images_dir, pid)
+                    os.path.join(base_image_dir, pid)
                     for pid in x
                 ]
             )
@@ -122,6 +123,11 @@ class DataLoader:
         elif dataset_name == "SlideVQA":
             # Create DataFrame with same structure as MPDocVQA
             df = pd.DataFrame(raw_dataset_dict["data"])
+
+            # Derive base_image_dir from the first document entry (absolute paths in train.json)
+            first_doc = df.iloc[0]["document"] if len(df) > 0 else None
+            first_page = first_doc[0] if isinstance(first_doc, list) and first_doc else (first_doc if isinstance(first_doc, str) else "")
+            base_image_dir = os.path.dirname(first_page) if first_page else ""
 
             # Map the SlideVQA specific fields to the pipeline's expected column names
             df["questionId"] = df["qa_id"].astype(str)
@@ -161,7 +167,12 @@ class DataLoader:
                 df = pd.DataFrame(raw_dataset_dict["data"])
             else:
                 df = pd.DataFrame(raw_dataset_dict)
-            
+
+            # Derive base_image_dir from the first document entry (absolute paths in train.json)
+            first_doc = df.iloc[0]["document"] if len(df) > 0 else None
+            first_page = first_doc[0] if isinstance(first_doc, list) and first_doc else (first_doc if isinstance(first_doc, str) else "")
+            base_image_dir = os.path.dirname(first_page) if first_page else ""
+
             df["questionId"] = df["question_id"].astype(str)
             df["docId"] = df["doc_id"]
             df["data_split"] = split_type
@@ -195,4 +206,4 @@ class DataLoader:
             raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
         df["image_path"] = df["document"]
-        return df
+        return df, base_image_dir
