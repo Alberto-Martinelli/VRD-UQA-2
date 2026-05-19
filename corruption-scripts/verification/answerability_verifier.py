@@ -218,7 +218,8 @@ class AnswerabilityVerifier:
                         "question_answer": "Error parsing response",
                     }
 
-            except Exception:
+            except Exception as e:
+                print(f"  [ERROR] verify_answerability failed: {e}")
                 return False
 
         elif self.provider == "local":
@@ -280,7 +281,8 @@ class AnswerabilityVerifier:
                         "question_answer": "Error parsing response",
                     }
 
-            except Exception:
+            except Exception as e:
+                print(f"  [ERROR] verify_answerability failed: {e}")
                 return False
 
         else:
@@ -340,15 +342,22 @@ class AnswerabilityVerifier:
         with open(self.input_file, "r") as f:
             data = json.load(f)
 
+        base_image_dir = data.get("base_image_dir", "")
+        if base_image_dir:
+            print(f"Base image dir: {base_image_dir}")
+
         # Calculate how many questions to verify
         total_questions = len(data["corrupted_questions"])
         num_to_verify = int(total_questions * self.verification_percentage / 100)
+        print(f"Total questions in input: {total_questions}, verifying {num_to_verify}")
 
         # Randomly select questions to verify
         question_IDs_to_verify = random.sample(range(total_questions), num_to_verify)
 
         # Create new list for verified questions
         verified_questions = []
+        skipped_no_images = 0
+        answerable_count = 0
 
         # Process selected questions
         for current_idx, question_id in enumerate(question_IDs_to_verify, 1):
@@ -357,14 +366,17 @@ class AnswerabilityVerifier:
 
             # Get relevant pages to check
             relevant_pages = self.get_relevant_pages(item)
-        
+
             # Get image paths only for relevant pages
             image_paths = []
             for page_id, page_info in item["layout_analysis"]["pages"].items():
                 if page_id not in relevant_pages:
                     continue
                 image_path = page_info["image_path"]
+                if base_image_dir and not os.path.dirname(image_path):
+                    image_path = os.path.join(base_image_dir, image_path)
                 if not os.path.exists(image_path):
+                    print(f"  [WARN] Image not found: {image_path}")
                     continue
                 # Get OCR text for this page
                 layout_analysis = page_info.get("layout_analysis", {})
@@ -372,7 +384,11 @@ class AnswerabilityVerifier:
                 image_paths.append((image_path, ocr_text))
 
             if not image_paths:
+                skipped_no_images += 1
+                print(f"  [SKIP] Q{current_idx}/{num_to_verify}: no valid images found, skipping")
                 continue
+
+            print(f"[{current_idx}/{num_to_verify}] Verifying: {question[:80]!r}")
 
             # Verify if the question is answerable
             is_answerable = False
@@ -395,8 +411,11 @@ class AnswerabilityVerifier:
 
             # Update verification result with the appropriate information
             if is_answerable:
+                answerable_count += 1
+                print(f"  --> ANSWERABLE (answer: {answerable_result['question_answer']!r})")
                 item["verification_result"] = answerable_result
             else:
+                print(f"  --> NOT ANSWERABLE")
                 # If no answerable result found, store the last verification attempt
                 item["verification_result"] = {
                     "verification_result": "False",
@@ -406,12 +425,15 @@ class AnswerabilityVerifier:
 
             verified_questions.append(item)
 
+        print(f"\nVerification complete: {answerable_count}/{len(verified_questions)} answerable, {skipped_no_images} skipped (no images)")
+
         # Create output data structure with only verified questions
         output_data = {"corrupted_questions": verified_questions}
 
         # Save results to the configured output file
         with open(self.output_file, "w") as f:
             json.dump(output_data, f, indent=2)
+        print(f"Results saved to {self.output_file}\n")
 
     def __del__(self):
         """Destructor to ensure log file is closed"""
