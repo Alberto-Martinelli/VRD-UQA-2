@@ -5,7 +5,10 @@ from tqdm import tqdm
 from langdetect import detect, LangDetectException
 
 
-def load_BDocs(split_type: str, max_questions: int = 300):
+OUT_DIR = "data/BDocs/BDocs_val_300/qas"
+
+
+def load_BDocs(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR):
     # 1. HPC Path Management
     # Use absolute paths so the corruption pipeline can find them from anywhere
     base_dir = os.path.abspath(os.getcwd())
@@ -85,12 +88,14 @@ def load_BDocs(split_type: str, max_questions: int = 300):
             flattened_data.append(entry)
 
     # 3. Wrap and Save
+    os.makedirs(out_dir, exist_ok=True)
+    out_json = os.path.join(out_dir, f"{split_type}.json")
     output_wrapper = {
         "dataset_name": "Bounding Docs",
         "data": flattened_data
     }
 
-    with open(f"bounding_docs_{split_type}.json", "w", encoding="utf-8") as f:
+    with open(out_json, "w", encoding="utf-8") as f:
         json.dump(output_wrapper, f, indent=4)
 
     print(f"\nDone! Produced {len(flattened_data)} question-level entries (capped at {max_questions}).")
@@ -100,4 +105,7 @@ def load_BDocs(split_type: str, max_questions: int = 300):
     print("\nDataset length:\n", len(dataset))
 
 if __name__ == "__main__":
-    load_BDocs("val")
+    split = "train"
+    questions_to_process = 300
+    corrupted_questions_desired = 50
+    load_BDocs(split, max_questions=questions_to_process, out_dir=f"data/BDocs/BDocs_{split}_{corrupted_questions_desired}/qas")

@@ -5,7 +5,10 @@ from tqdm import tqdm
 from PIL import Image
 
 
-def load_SlideVQA(split_type: str, max_questions: int = 300):
+OUT_DIR = "data/SlideVQA/SlideVQA_val_300/qas"
+
+
+def load_SlideVQA(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR):
     # 1. Get the Absolute Base Directory 
     # This will resolve to /mnt/beegfs/amartinelli/download_SlideVQA/VRD-UQA/
     base_dir = os.path.abspath(os.getcwd())
@@ -72,17 +75,21 @@ def load_SlideVQA(split_type: str, max_questions: int = 300):
         processed_data.append(record)
 
     # 5. Save the wrapped data
-    output_file = f"slidevqa_{split_type}.json"
+    os.makedirs(out_dir, exist_ok=True)
+    out_json = os.path.join(out_dir, f"{split_type}.json")
     output_wrapper = {
         "dataset_name": "SlideVQA",
         "data": processed_data
     }
 
-    with open(output_file, "w", encoding="utf-8") as f:
+    with open(out_json, "w", encoding="utf-8") as f:
         json.dump(output_wrapper, f, indent=4)
 
-    print(f"\nSuccess! Processed data saved to {os.path.join(base_dir, output_file)}")
+    print(f"\nSuccess! Processed data saved to {out_json}")
     print(f"Absolute Image paths saved in JSON start with: {image_dir}")
 
 if __name__ == "__main__":
-    load_SlideVQA("val", max_questions=300)
+    split = "train"
+    questions_to_process = 300
+    corrupted_questions_desired = 50
+    load_SlideVQA(split, max_questions=questions_to_process, out_dir=f"data/SlideVQA/SlideVQA_{split}_{corrupted_questions_desired}/qas")

@@ -1,26 +1,34 @@
+import os
+import json
 from datasets import load_dataset
 
-def load_DUDE(split_type: str, max_questions: int = 300):
+OUT_DIR = "data/DUDE/DUDE_val_300/qas"
+
+
+def load_DUDE(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR):
     dataset = load_dataset("jordyvl/DUDE_loader", split=split_type, trust_remote_code=True)
 
-    print("First example:\n", dataset[0])      # first example
+    print("First example:\n", dataset[0])
     print("\nColumn names:\n", dataset.column_names)
     print("\nDataset length:\n", len(dataset))
 
-    import json
-
     small_dataset = dataset.shuffle(seed=42).select(range(max_questions))
 
-    # Create the wrapper structure
     output_data = {
         "dataset_name": "DUDE",
         "data": list(small_dataset)
     }
 
-    # Save the wrapped data to your JSON file
-    with open(f"dude_{split_type}.json", "w") as f:
+    os.makedirs(out_dir, exist_ok=True)
+    out_json = os.path.join(out_dir, f"{split_type}.json")
+    with open(out_json, "w") as f:
         json.dump(output_data, f, indent=4)
+
+    print(f"\nSaved {len(small_dataset)} questions to {out_json}")
 
 
 if __name__ == "__main__":
-    load_DUDE("val", max_questions=300)
+    split = "train"
+    questions_to_process = 300
+    corrupted_questions_desired = 50
+    load_DUDE(split, max_questions=questions_to_process, out_dir=f"data/DUDE/DUDE_{split}_{corrupted_questions_desired}/qas")

@@ -1,0 +1,4 @@
+sbatch --job-name=DUDE     VRD-UQA/run_pipeline.sh DUDE     val 300
+sbatch --job-name=SlideVQA VRD-UQA/run_pipeline.sh SlideVQA val 300
+sbatch --job-name=MPDocVQA VRD-UQA/run_pipeline.sh MPDocVQA val 300
+sbatch --job-name=BDocs    VRD-UQA/run_pipeline.sh BDocs    val 300
