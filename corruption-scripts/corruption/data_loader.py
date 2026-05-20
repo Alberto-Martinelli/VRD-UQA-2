@@ -67,10 +67,10 @@ class DataLoader:
             if "PDF" in str(sample_doc):
                 # Works perfectly for standard HPC/Huggingface downloaded layouts
                 base_extracted_path = sample_doc.rsplit("PDF", 1)[0]
-                base_image_dir = os.path.join(base_extracted_path, "DUDE_train-val-test_binaries", "images", "train")
+                base_image_dir = os.path.join(base_extracted_path, "DUDE_train-val-test_binaries", "images", split_type)
             else:
                 # Fallback for Mac setups using local images strictly within dataset_json_path
-                base_image_dir = os.path.join(base_path, dataset_json_path, "images", "train")
+                base_image_dir = os.path.join(base_path, dataset_json_path, "images", split_type)
 
             # Get document pages using directory scanning
             def get_document_pages(doc_id):
