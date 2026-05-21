@@ -312,6 +312,18 @@ def create_augmented_dataset(params, df_to_corrupt):
         df_to_corrupt = document_analyzer.process_dataset_questions(
             df_to_corrupt, params["augmented_dataset_path"]
         )
+
+        # Explicitly unload layout model to free up VRAM
+        if hasattr(document_analyzer, "qwen_model") and document_analyzer.qwen_model is not None:
+            logging.info("Unloading layout analysis model from GPU...")
+            document_analyzer.qwen_model.cpu()
+            del document_analyzer.qwen_model
+            del document_analyzer.processor
+            
+        import gc
+        import torch
+        gc.collect()
+        torch.cuda.empty_cache()
     else:
         logging.info("Augmented dataset already exists. Skipping layout analysis.")
     return df_to_corrupt
@@ -424,3 +436,20 @@ def corrupt_questions(params, entity_identifier, base_image_dir):
     logging.info(f"  -> {llm_duplicate_removals} questions were removed because the LLM rewrote them identically to the original")
     logging.info(f"  -> {removed['invalid_format']} questions were removed for invalid format (e.g., hallucinated tags)")
     logging.info(f"=== Final cleaned corrupted questions available: {final_cleaned_count} ===")
+
+    # Explicitly unload corruption model from GPU to free up VRAM
+    if model_loader.model is not None:
+        logging.info("Unloading corruption model from GPU...")
+        if hasattr(model_loader.model, "cpu"):
+            model_loader.model.cpu()
+        del model_loader.model
+        del model_loader.tokenizer
+        model_loader.model = None
+        model_loader.tokenizer = None
+        model_loader.model_name = None
+        model_loader.model_provider = None
+
+    import gc
+    import torch
+    gc.collect()
+    torch.cuda.empty_cache()

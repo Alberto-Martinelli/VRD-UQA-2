@@ -13,18 +13,51 @@ parent_dir = current_dir.parent
 if str(parent_dir) not in sys.path:
     sys.path.append(str(parent_dir))
 
+import warnings
+import os
+
+# Suppress noisy third-party warnings before importing libraries
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+
+import logging
+import nltk
+nltk.download("punkt_tab", quiet=True)
+
 from utils.config_utils import load_config, extract_config
 from pipeline import (
     load_data, 
     identify_all_entities, 
     create_augmented_dataset, 
-    corrupt_questions
+    corrupt_questions,
+    clean_corrupted_questions
 )
 from verification.answerability_verifier import AnswerabilityVerifier
 from verification.just_false import filter_false_verifications
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
+logging.basicConfig(
+    # level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(levelname)s - %(message)s"
+)
+# Silence noisy third-party loggers
+for logger_name in ["httpx", "httpcore", "gliner", "transformers", "sentence_transformers", "sentencepiece"]:
+    logging.getLogger(logger_name).setLevel(logging.ERROR)
+
+from transformers.cache_utils import DynamicCache
+if not hasattr(DynamicCache, "seen_tokens"):
+    @property
+    def seen_tokens(self):
+        return self.get_seq_length()
+    DynamicCache.seen_tokens = seen_tokens
+
+if not hasattr(DynamicCache, "get_max_length"):
+    def get_max_length(self):
+        return getattr(self, "_max_cache_len", None) or getattr(self, "max_cache_len", 4096)
+    DynamicCache.get_max_length = get_max_length
+
 
 def get_already_processed_texts(output_pool_path):
     """Load already processed original question texts to resume safely if interrupted."""
@@ -89,6 +122,7 @@ def main():
     
     # Isolated temp paths to avoid collisions during concurrent Slurm jobs
     batch_corrupted_path = f"./corruption-scripts/results/temp_{dataset_name}_corrupted.json"
+    batch_cleaned_path = f"./corruption-scripts/results/temp_{dataset_name}_cleaned.json"
     batch_verified_path = f"./corruption-scripts/results/temp_{dataset_name}_verified.json"
     batch_augmented_path = f"./corruption-scripts/results/temp_{dataset_name}_augmented.json"
 
@@ -101,7 +135,7 @@ def main():
     # Initialize the Verifier in memory (prevents model reloading on every batch)
     logging.info("Initializing Answerability Verifier...")
     verifier = AnswerabilityVerifier(config_path=args.config)
-    verifier.input_file = batch_corrupted_path
+    verifier.input_file = batch_cleaned_path
     verifier.output_file = batch_verified_path
 
     while len(verified_false_pool) < args.target and current_row_idx < total_available_rows:
@@ -133,6 +167,13 @@ def main():
         
         if not os.path.exists(batch_corrupted_path) or os.path.getsize(batch_corrupted_path) == 0:
             logging.info("Batch yielded 0 corrupted candidates. Moving to next batch.")
+            continue
+
+        # --- Filter out failed corruptions and invalid formats before verification ---
+        clean_corrupted_questions(batch_corrupted_path, batch_cleaned_path)
+
+        if not os.path.exists(batch_cleaned_path) or os.path.getsize(batch_cleaned_path) == 0:
+            logging.info("Batch yielded 0 valid corrupted candidates after cleaning. Moving to next batch.")
             continue
 
         # --- Pipeline Step D: Verification ---
@@ -169,7 +210,7 @@ def main():
             logging.info(f"Intermediate master pool saved to {final_pool_path} ({len(verified_false_pool)} items)")
             
         # Clean up temporary batch files
-        for temp_file in [batch_corrupted_path, batch_verified_path, batch_augmented_path]:
+        for temp_file in [batch_corrupted_path, batch_cleaned_path, batch_verified_path, batch_augmented_path]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
