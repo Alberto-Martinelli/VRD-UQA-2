@@ -8,6 +8,9 @@
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-VQA_analysis-%j.out # output file name
 
+START_TIME=$SECONDS
+echo "Job started at: $(date)"
+
 module purge
 
 # Inspect available modules first with: module avail
@@ -18,9 +21,9 @@ export SCRATCH_FLASH="/mnt/beegfs/amartinelli"
 
 export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
 
-# rm -rf $SCRATCH_FLASH/VQA_analysis
+rm -rf $SCRATCH_FLASH/VQA_analysis
 # mkdir -p $SCRATCH_FLASH/VQA_analysis/
-rsync -av --exclude='DUDE' --exclude='BDocs' --exclude='SlideVQA' --exclude='MPDocVQA' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' $HOME/VRD-UQA/ $SCRATCH_FLASH/VQA_analysis/
+rsync -av --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' $HOME/VRD-UQA/ $SCRATCH_FLASH/VQA_analysis/
 cd $SCRATCH_FLASH/VQA_analysis/
 # rm -rf .venv/
 
@@ -28,18 +31,23 @@ uv --version
 export UV_LINK_MODE=copy
 uv sync
 # ------ RUN THE QWEN EVALUATOR ------ 
-# uv run python VQA_analysis/model_evaluators/qwen_evaluator.py --config_path VQA_analysis/config.json
+uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path VQA_analysis/config.json
 
 # cp VQA_analysis/models/results/MPDocVQA/LLM/results_w2_UNABLE/original/Qwen_vqa_analysis_results.json $HOME/VRD-UQA/
 
 # ------ RUN THE UNABLE CONVERTER ------
-# uv run python VQA_analysis/pipeline/1_unable_converter.py
+uv run python VQA_analysis/pipeline/1_unable_converter.py
 
 # ------ RUN THE ADDING INFORMATIONS ------
-# uv run python VQA_analysis/pipeline/2_adding_informations.py
+uv run python VQA_analysis/pipeline/2_adding_informations.py
 
 # ------ RUN THE RESULT ANALYSIS ------
 uv run python VQA_analysis/pipeline/3_result_analysis.py --dataset MPDocVQA --images_path needed_images_2
 
 mv $HOME/slurm* $HOME/VRD-UQA/
-# cp corruption-scripts/results/MPDocVQA_unanswerable_corrupted_questions_cleaned.json $HOME/VRD-UQA
+cp -r corruption-scripts/results/ $HOME/VRD-UQA
+
+
+ELAPSED=$(( SECONDS - START_TIME ))
+printf 'Job finished at: %s\nTotal execution time: %02d:%02d:%02d (%ds)\n' \
+    "$(date)" $((ELAPSED/3600)) $(((ELAPSED%3600)/60)) $((ELAPSED%60)) "$ELAPSED"

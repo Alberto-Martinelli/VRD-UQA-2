@@ -89,7 +89,7 @@ def load_SlideVQA(split_type: str, max_questions: int = 300, out_dir: str = OUT_
     print(f"Absolute Image paths saved in JSON start with: {image_dir}")
 
 if __name__ == "__main__":
-    split = "train"
-    questions_to_process = 300
-    corrupted_questions_desired = 50
+    split = "val"
+    questions_to_process = 1000
+    corrupted_questions_desired = 300
     load_SlideVQA(split, max_questions=questions_to_process, out_dir=f"data/SlideVQA/SlideVQA_{split}_{corrupted_questions_desired}/qas")

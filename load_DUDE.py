@@ -28,7 +28,7 @@ def load_DUDE(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR)
 
 
 if __name__ == "__main__":
-    split = "train"
-    questions_to_process = 300
-    corrupted_questions_desired = 50
+    split = "val"
+    questions_to_process = 1000
+    corrupted_questions_desired = 300
     load_DUDE(split, max_questions=questions_to_process, out_dir=f"data/DUDE/DUDE_{split}_{corrupted_questions_desired}/qas")

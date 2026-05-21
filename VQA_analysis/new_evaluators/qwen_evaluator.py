@@ -110,84 +110,84 @@ class QwenVQAEvaluator:
         ocr_items.sort()
         return "\n".join(item[2] for item in ocr_items)
 
-    def generate_answer(self, question, image_paths, ocr_text=None):
-        try:
-            #     batch_paths = image_paths[start_idx:end_idx]
+    def get_ocr_text(self, pages):
+        # print("Extracting OCR text...")
+        ocr_text = {}
+        for page_id in pages:
+            # Navigate through the nested structure correctly
+            page_layout = pages[page_id]["layout_analysis"]
+            page_ocr = self.get_sorted_ocr_text(page_layout)
+            if page_ocr:
+                # Use the full path as the key since that's what we use in generate_answer
+                image_filename = os.path.basename(page_id)
+                image_path = os.path.join(
+                    self.config["images_base_path"], image_filename
+                )
+                ocr_text[image_path] = page_ocr
+                # print(f"Extracted OCR text for page: {image_filename}")
+            else:
+                print(f"No OCR text found for page: {image_filename}")
+        return ocr_text
 
+    def generate_answer(self, question, image_paths, ocr_text=None):
+        """Generates model responses using a robust sliding-window image context."""
+        try:
             window_size = self.model_config.get("batch_size", 1)
             if window_size > 1:
-                stride = self.model_config.get(
-                    "stride", window_size // 2
-                )  # Default stride is half the window size
+                stride = self.model_config.get("stride", window_size // 2)
             else:
                 stride = 1
             total_images = len(image_paths)
 
-            # Calculate total number of windows
-            total_windows = max(1, (total_images - window_size + stride) // stride)
+            # 1. Pre-build window slices to prevent any indexing bugs or skipped images
+            windows = []
+            start_idx = 0
+            while start_idx < total_images:
+                end_idx = min(start_idx + window_size, total_images)
+                
+                # Slide the last window backward to keep full window size if preferred
+                if end_idx == total_images and (end_idx - start_idx) < window_size and total_images >= window_size:
+                    window = image_paths[-window_size:]
+                else:
+                    window = image_paths[start_idx:end_idx]
+                
+                if window not in windows:  # Avoid duplicate evaluations
+                    windows.append(window)
+                if end_idx == total_images:
+                    break
+                start_idx += stride
 
-            # print(
-            #     f"\nProcessing {total_images} images with window size {window_size}, "
-            #     f"stride {stride} ({total_windows} window{'s' if total_windows > 1 else ''})"
-            # )
             all_responses = []
 
-            # Process images using moving window
-            for window_idx in range(total_windows):
-                start_idx = window_idx * stride
-                end_idx = min(start_idx + window_size, total_images)
-                window_paths = image_paths[start_idx:end_idx]
-
-                # Handle last window to ensure all images are processed
-                if window_idx == total_windows - 1 and end_idx < total_images:
-                    window_paths = image_paths[-window_size:]
-
-                # print(f"\nBatch {batch_idx + 1}/{total_batches}")
-                # print(f"Processing images {start_idx + 1}-{end_idx} of {total_images}")
-                # print(f"Images in this batch: {len(batch_paths)}")
-                # for idx, path in enumerate(batch_paths, 1):
-                #     print(f"  {idx}. {os.path.basename(path)}")
-
-                # print(f"\nBatch {window_idx + 1}/{total_windows}")
-                # print(f"Processing images {start_idx + 1}-{end_idx} of {total_images}")
-                # print(f"Images in this batch: {len(window_paths)}")
-                batch_paths = window_paths
-                # for idx, path in enumerate(batch_paths, 1):
-                #     print(f"  {idx}. {os.path.basename(path)}")
-
-                # Get OCR text for this batch if available
+            # 2. Process each sliding window batch
+            for window in windows:
+                # Format OCR text for this batch if available
                 batch_ocr = None
                 if ocr_text:
-                    batch_ocr = []
-                    for page_idx, path in enumerate(batch_paths, start_idx):
-                        page_num = page_idx + 1
-                        page_ocr = ocr_text.get(
-                            path, ""
-                        )  # Get OCR text for specific page
+                    ocr_lines = []
+                    for path in window:
+                        page_num = image_paths.index(path) + 1  # 1-based page number
+                        page_ocr = ocr_text.get(path, "")
                         if page_ocr:
-                            batch_ocr.append(f"Page {page_num}:\n{page_ocr}")
-                    batch_ocr = "\n\n".join(batch_ocr) if batch_ocr else None
+                            ocr_lines.append(f"Page {page_num}:\n{page_ocr}")
+                    batch_ocr = "\n\n".join(ocr_lines) if ocr_lines else None
 
-                # Create prompt for the batch
+                # Generate model prompt and format user messages
                 question_prompt = self._create_prompt(question, batch_ocr)
-
-                # Format messages with batch of images - all images in batch go into same prompt
                 messages = [
                     {
                         "role": "user",
                         "content": [
                             *[
                                 {"type": "image", "image": f"file://{path}"}
-                                for path in batch_paths
+                                for path in window
                             ],
                             {"type": "text", "text": question_prompt},
                         ],
                     }
                 ]
 
-                # print("\nSending batch to model...")
-
-                # Prepare inputs
+                # Prepare inputs for Qwen
                 text = self.processor.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
                 )
@@ -201,7 +201,7 @@ class QwenVQAEvaluator:
                 )
                 inputs = inputs.to("cuda")
 
-                # Generate response
+                # Perform inference
                 generated_ids = self.model.generate(
                     **inputs, max_new_tokens=self.max_tokens
                 )
@@ -215,13 +215,9 @@ class QwenVQAEvaluator:
                     clean_up_tokenization_spaces=False,
                 )[0]
 
-                # print(f"Response for batch {batch_idx + 1}: {response}")
-                # print(f"Response for batch {window_idx + 1}: {response}")
-
-                # Add response for this batch
                 all_responses.append(
                     {
-                        "pages": batch_paths,  # Using actual image paths for this batch
+                        "pages": window,
                         "answer": response,
                     }
                 )
@@ -230,7 +226,6 @@ class QwenVQAEvaluator:
                 "answer": all_responses,
                 "query": question,
                 "image_paths": image_paths,
-                # "analysis_type": f"batch_size_{batch_size}",
                 "analysis_type": f"window_size_{window_size}",
             }
 
@@ -278,7 +273,57 @@ class QwenVQAEvaluator:
         except Exception as e:
             print(f"Error saving results: {str(e)}")
 
+    def _process_single_question(self, item):
+        """Processes a single visual question item and appends its evaluation results."""
+        if "verification_result" not in item:
+            item["verification_result"] = {}
+        if "vqa_results" not in item["verification_result"]:
+            item["verification_result"]["vqa_results"] = []
+
+        question = item["corrupted_question"]
+        pages = item["layout_analysis"]["pages"]
+
+        # Resolve raw page identifiers to absolute image paths
+        image_paths = [
+            os.path.join(self.config["images_base_path"], os.path.basename(page_id))
+            for page_id in pages
+        ]
+
+        # Retrieve OCR text if enabled
+        ocr_text = self.get_ocr_text(pages) if self.config.get("ocr_enabled", False) else None
+
+        # Generate model response
+        result = self.generate_answer(question, image_paths, ocr_text)
+
+        # Create structured VQA result
+        vqa_result = {
+            "model_type": "qwen",
+            "model_config": {
+                "batch_size": self.model_config.get("batch_size", 1),
+                "max_tokens": self.max_tokens,
+                "use_flash_attention": self.model_config.get("use_flash_attention", False),
+            },
+            "ocr_enabled": bool(ocr_text),
+            "question": question,
+            "answer": result.get("answer", "Unable to determine"),
+            "image_paths": image_paths,
+            "analysis_type": result.get("analysis_type", ""),
+            "timestamp": datetime.datetime.now().isoformat(),
+        }
+
+        # Check and record any generation errors
+        if "error" in result:
+            vqa_result["error"] = result["error"]
+            vqa_result["traceback"] = result.get("traceback", "")
+            success = False
+        else:
+            success = True
+
+        item["verification_result"]["vqa_results"].append(vqa_result)
+        return success
+
     def evaluate(self):
+        """Orchestrates the loading, processing, and evaluation of the dataset."""
         try:
             print("\nStarting Qwen evaluation...")
 
@@ -292,13 +337,9 @@ class QwenVQAEvaluator:
             num_samples = int(total_questions * (self.sampling_percentage / 100))
 
             if self.sampling_percentage < 100:
-                sampled_questions = random.sample(
-                    data["corrupted_questions"], num_samples
-                )
+                sampled_questions = random.sample(data["corrupted_questions"], num_samples)
                 data["corrupted_questions"] = sampled_questions
-                print(
-                    f"Sampled {num_samples} questions ({self.sampling_percentage}%) for evaluation"
-                )
+                print(f"Sampled {num_samples} questions ({self.sampling_percentage}%) for evaluation")
             else:
                 print("Processing 100% of questions (no sampling)")
 
@@ -306,113 +347,30 @@ class QwenVQAEvaluator:
             success_count = 0
             error_count = 0
 
+            # Iterate through the sampled/full questions
             for item in tqdm(data["corrupted_questions"]):
                 try:
                     processed_count += 1
-                    # print(f"\nProcessing question {processed_count}/{len(data['corrupted_questions'])}")
-
-                    if "verification_result" not in item:
-                        item["verification_result"] = {}
-                    if "vqa_results" not in item["verification_result"]:
-                        item["verification_result"]["vqa_results"] = []
-
-                    question = item["corrupted_question"]
-                    pages = item["layout_analysis"]["pages"]
-
-                    image_paths = []
-                    for page_id in pages:
-                        image_filename = os.path.basename(page_id)
-                        image_path = os.path.join(
-                            self.config["images_base_path"], image_filename
-                        )
-                        image_paths.append(image_path)
-
-                    # print(f"Question: {question[:100]}...")
-                    # print(f"Number of pages to analyze: {len(image_paths)}")
-
-                    # Get OCR text if enabled
-                    ocr_text = None
-                    if self.config.get("ocr_enabled", False):
-                        # print("Extracting OCR text...")
-                        ocr_text = {}
-                        for page_id in pages:
-                            # Navigate through the nested structure correctly
-                            page_layout = pages[page_id]["layout_analysis"]
-                            page_ocr = self.get_sorted_ocr_text(page_layout)
-                            if page_ocr:
-                                # Use the full path as the key since that's what we use in generate_answer
-                                image_filename = os.path.basename(page_id)
-                                image_path = os.path.join(
-                                    self.config["images_base_path"], image_filename
-                                )
-                                ocr_text[image_path] = page_ocr
-                                # print(f"Extracted OCR text for page: {image_filename}")
-                            else:
-                                print(f"No OCR text found for page: {image_filename}")
-
-                    # Generate answer
-                    # print("Generating answer...")
-                    result = self.generate_answer(question, image_paths, ocr_text)
-                    # print(f"\nAnswer received: {result.get('answer', 'No answer')}")
-
-                    # Create VQA result
-                    vqa_result = {
-                        "model_type": "qwen",
-                        "model_config": {
-                            "batch_size": self.model_config.get("batch_size", 1),
-                            "max_tokens": self.max_tokens,
-                            "use_flash_attention": self.model_config.get(
-                                "use_flash_attention", False
-                            ),
-                        },
-                        "ocr_enabled": bool(ocr_text),
-                        "question": question,
-                        "answer": result.get("answer", "Unable to determine"),
-                        "image_paths": image_paths,
-                        "analysis_type": result.get("analysis_type", ""),
-                        "timestamp": datetime.datetime.now().isoformat(),
-                    }
-
-                    if "error" in result:
-                        vqa_result["error"] = result["error"]
-                        vqa_result["traceback"] = result.get("traceback", "")
-                        error_count += 1
-                    else:
+                    success = self._process_single_question(item)
+                    if success:
                         success_count += 1
-
-                    item["verification_result"]["vqa_results"].append(vqa_result)
-
-                    # Save intermediate results
-                    # if processed_count % 10 == 0:
-                    #     self._save_results(data)
-                    #     print("Intermediate results saved")
-
+                    else:
+                        error_count += 1
                 except Exception as e:
                     print(f"Error processing question: {str(e)}")
                     print(f"Full error: {traceback.format_exc()}")
                     error_count += 1
 
-            # Final statistics
+            # Log final statistics
             print(f"\nProcessing completed:")
             print(f"Total questions processed: {processed_count}")
             print(f"Successful generations: {success_count}")
             print(f"Errors encountered: {error_count}")
             if processed_count > 0:
-                print(f"Success rate: {(success_count/processed_count)*100:.2f}%")
+                print(f"Success rate: {(success_count / processed_count) * 100:.2f}%")
 
-            # Save final results
+            # Save results (unified path log handled inside _save_results)
             self._save_results(data)
-            output_file = self.model_config["name"] + "_" + self.config["output_file"]
-            if (
-                self.config["ocr_enabled"]
-                and not self.config["unable_to_respond_aware"]
-            ):
-                output_file = output_file.replace(".json", "_OCR_UNABLE.json")
-            elif self.config["ocr_enabled"]:
-                output_file = output_file.replace(".json", "_OCR.json")
-            elif not self.config["unable_to_respond_aware"]:
-                output_file = output_file.replace(".json", "_UNABLE.json")
-            print(f"Final results saved to {output_file}")
 
         except Exception as e:
             print(f"Critical error in evaluate: {str(e)}")

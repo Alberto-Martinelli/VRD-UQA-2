@@ -105,7 +105,7 @@ def load_BDocs(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR
     print("\nDataset length:\n", len(dataset))
 
 if __name__ == "__main__":
-    split = "train"
-    questions_to_process = 300
-    corrupted_questions_desired = 50
+    split = "val"
+    questions_to_process = 1000
+    corrupted_questions_desired = 300
     load_BDocs(split, max_questions=questions_to_process, out_dir=f"data/BDocs/BDocs_{split}_{corrupted_questions_desired}/qas")
