@@ -119,12 +119,16 @@ class DocumentAnalyzer:
         self.tokenizer = AutoTokenizer.from_pretrained(
             "ucaslcl/GOT-OCR2_0", trust_remote_code=True
         )
+        # Determine best hardware type
+        model_dtype = torch.bfloat16 if self.device_type == "cuda" else torch.float32
+        
         self.ocr_model = AutoModel.from_pretrained(
             "ucaslcl/GOT-OCR2_0",
             trust_remote_code=True,
             use_safetensors=True,
             pad_token_id=self.tokenizer.eos_token_id,
             device_map=self.device_type,
+            torch_dtype=model_dtype,
         )
         self.ocr_model = self.ocr_model.eval().to(self.device)
 
@@ -357,9 +361,9 @@ class DocumentAnalyzer:
                 logging.error(f"Error processing box {idx}: {str(e)}")
                 continue
 
-            # Clear CUDA cache periodically
-            if idx % 10 == 0:
-                self._clear_cache()
+            # Clear CUDA cache periodically (removed to avoid hardware sync bottlenecks)
+            # if idx % 10 == 0:
+            #     self._clear_cache()
         # Save results
         os.makedirs(self.layout_saving_dir, exist_ok=True)
         json_path = f"{self.layout_saving_dir}/{page_id}.json"
