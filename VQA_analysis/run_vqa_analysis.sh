@@ -45,7 +45,8 @@ uv run python VQA_analysis/pipeline/2_adding_informations.py
 uv run python VQA_analysis/pipeline/3_result_analysis.py --dataset MPDocVQA --images_path needed_images_2
 
 mv $HOME/slurm* $HOME/VRD-UQA/
-cp -r corruption-scripts/results/ $HOME/VRD-UQA
+
+cp -r $SCRATCH_FLASH/VQA_analysis/VQA_analysis/models/results $HOME/VRD-UQA
 
 
 ELAPSED=$(( SECONDS - START_TIME ))

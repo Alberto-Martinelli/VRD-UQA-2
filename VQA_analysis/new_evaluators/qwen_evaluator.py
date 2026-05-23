@@ -129,8 +129,8 @@ class QwenVQAEvaluator:
                 print(f"No OCR text found for page: {image_filename}")
         return ocr_text
 
-    def generate_answer(self, question, image_paths, ocr_text=None):
-        """Generates model responses using a robust sliding-window image context."""
+    def generate_answer(self, question, image_paths, ocr_text=None, few_shot_turns=None):
+        """Generates model responses using a robust sliding-window image context and optional few-shot demonstrations."""
         try:
             window_size = self.model_config.get("batch_size", 1)
             if window_size > 1:
@@ -174,7 +174,13 @@ class QwenVQAEvaluator:
 
                 # Generate model prompt and format user messages
                 question_prompt = self._create_prompt(question, batch_ocr)
-                messages = [
+                
+                # Build conversational history
+                messages = []
+                if few_shot_turns:
+                    messages.extend(few_shot_turns)
+                
+                messages.append(
                     {
                         "role": "user",
                         "content": [
@@ -185,7 +191,7 @@ class QwenVQAEvaluator:
                             {"type": "text", "text": question_prompt},
                         ],
                     }
-                ]
+                )
 
                 # Prepare inputs for Qwen
                 text = self.processor.apply_chat_template(
@@ -254,6 +260,13 @@ class QwenVQAEvaluator:
         if not self.config["unable_to_respond_aware"]:
             processing_folder += "_UNABLE"
 
+        # Add unique folder tag if few-shot is enabled
+        few_shot_config = self.config.get("few_shot", {})
+        if few_shot_config.get("enabled", False):
+            n_shots = few_shot_config.get("n_shots", 2)
+            shot_type = few_shot_config.get("shot_type", "mixed")
+            processing_folder += f"_fewshot_{shot_type}_{n_shots}"
+
         # Create output filename with model name
         output_filename = f"{self.model_config['name']}_vqa_analysis_results.json"
 
@@ -273,7 +286,105 @@ class QwenVQAEvaluator:
         except Exception as e:
             print(f"Error saving results: {str(e)}")
 
-    def _process_single_question(self, item):
+    def _select_few_shot_examples(self, dataset_pool, current_item):
+        """Selects N distinct few-shot demonstrations based on configured shot_type."""
+        few_shot_config = self.config.get("few_shot", {})
+        if not few_shot_config.get("enabled", False):
+            return []
+
+        n_shots = few_shot_config.get("n_shots", 2)
+        shot_type = few_shot_config.get("shot_type", "mixed")
+
+        # Exclude the current item to prevent data leakage
+        pool = [item for item in dataset_pool if item != current_item]
+        if not pool:
+            return []
+
+        selected_shots = []
+
+        if shot_type == "answerable":
+            candidates = [item for item in pool if item.get("original_answer_locations")]
+            if not candidates:
+                candidates = pool
+            selected_shots = random.sample(candidates, min(n_shots, len(candidates)))
+            return [{"type": "answerable", "item": s} for s in selected_shots]
+
+        elif shot_type == "unanswerable":
+            candidates = [item for item in pool if item.get("is_corrupted", True)]
+            if not candidates:
+                candidates = pool
+            selected_shots = random.sample(candidates, min(n_shots, len(candidates)))
+            return [{"type": "unanswerable", "item": s} for s in selected_shots]
+
+        elif shot_type == "mixed":
+            ans_candidates = [item for item in pool if item.get("original_answer_locations")]
+            unans_candidates = [item for item in pool if item.get("is_corrupted", True)]
+
+            if not ans_candidates:
+                ans_candidates = pool
+            if not unans_candidates:
+                unans_candidates = pool
+
+            n_ans = n_shots // 2
+            n_unans = n_shots - n_ans
+
+            ans_selected = random.sample(ans_candidates, min(n_ans, len(ans_candidates)))
+            unans_selected = random.sample(unans_candidates, min(n_unans, len(unans_candidates)))
+
+            shots = [{"type": "answerable", "item": s} for s in ans_selected]
+            shots.extend([{"type": "unanswerable", "item": s} for s in unans_selected])
+            random.shuffle(shots)
+            return shots
+
+        return []
+
+    def _build_few_shot_turns(self, shots):
+        """Constructs conversational message turns for few-shot visual prompts."""
+        turns = []
+        for shot in shots:
+            item = shot["item"]
+            is_ans = shot["type"] == "answerable"
+
+            # 1. Resolve images
+            pages = item["layout_analysis"]["pages"]
+            image_paths = [
+                os.path.join(self.config["images_base_path"], os.path.basename(p_id))
+                for p_id in pages
+            ]
+
+            # 2. Get OCR if enabled
+            ocr_text = self.get_ocr_text(pages) if self.config.get("ocr_enabled", False) else None
+
+            # 3. Determine prompt and correct answer
+            if is_ans:
+                q_text = item["original_question"]
+                ans_text = item["original_answer_locations"][0]["answer"]
+            else:
+                q_text = item["corrupted_question"]
+                ans_text = "Unable to determine"
+
+            prompt = self._create_prompt(q_text, ocr_text)
+
+            # User Turn
+            turns.append({
+                "role": "user",
+                "content": [
+                    *[{"type": "image", "image": f"file://{path}"} for path in image_paths],
+                    {"type": "text", "text": prompt}
+                ]
+            })
+
+            # Assistant Turn
+            turns.append({
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": ans_text}
+                ]
+            })
+
+        return turns
+
+    def _process_single_question(self, item, dataset_pool):
         """Processes a single visual question item and appends its evaluation results."""
         if "verification_result" not in item:
             item["verification_result"] = {}
@@ -292,8 +403,15 @@ class QwenVQAEvaluator:
         # Retrieve OCR text if enabled
         ocr_text = self.get_ocr_text(pages) if self.config.get("ocr_enabled", False) else None
 
+        # Build few-shot turns if enabled
+        few_shot_turns = None
+        few_shot_config = self.config.get("few_shot", {})
+        if few_shot_config.get("enabled", False):
+            shots = self._select_few_shot_examples(dataset_pool, item)
+            few_shot_turns = self._build_few_shot_turns(shots)
+
         # Generate model response
-        result = self.generate_answer(question, image_paths, ocr_text)
+        result = self.generate_answer(question, image_paths, ocr_text, few_shot_turns=few_shot_turns)
 
         # Create structured VQA result
         vqa_result = {
@@ -304,6 +422,7 @@ class QwenVQAEvaluator:
                 "use_flash_attention": self.model_config.get("use_flash_attention", False),
             },
             "ocr_enabled": bool(ocr_text),
+            "few_shot_config": self.config.get("few_shot", {"enabled": False}),
             "question": question,
             "answer": result.get("answer", "Unable to determine"),
             "image_paths": image_paths,
@@ -351,7 +470,7 @@ class QwenVQAEvaluator:
             for item in tqdm(data["corrupted_questions"]):
                 try:
                     processed_count += 1
-                    success = self._process_single_question(item)
+                    success = self._process_single_question(item, data["corrupted_questions"])
                     if success:
                         success_count += 1
                     else:
