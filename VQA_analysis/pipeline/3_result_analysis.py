@@ -876,6 +876,9 @@ def _process_model_file(result_file, entity_verifier, dataset, images_path):
     with open(result_file, "r") as f:
         data = json.load(f)
 
+    # Extract base_image_dir from the input file if present, otherwise fall back to images_path argument
+    images_path = data.get("base_image_dir", images_path)
+
     results = data.get("corrupted_questions", [])
     if not results:
         print(f"Warning: No corrupted questions found in {result_file}")
@@ -1001,6 +1004,6 @@ def generate_analysis_report(dataset, images_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate VQA analysis report")
     parser.add_argument("--dataset", type=str, default="MPDocVQA", help="Dataset name (must match the folder under models/results/)")
-    parser.add_argument("--images_path", type=str, default="needed_images_2", help="Path to the images directory")
+    parser.add_argument("--images_path", type=str, default=None, help="Path to the images directory (optional fallback)")
     args = parser.parse_args()
     generate_analysis_report(dataset=args.dataset, images_path=args.images_path)

@@ -162,7 +162,6 @@
     "sampling_percentage": 100,
     "ocr_enabled": false,
     "unable_to_respond_aware": false,
-    "images_base_path": "needed_images_2",
     "few_shot": {
         "enabled": true,
         "n_shots": 2,

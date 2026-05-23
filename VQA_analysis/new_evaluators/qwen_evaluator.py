@@ -26,6 +26,20 @@ class QwenVQAEvaluator:
         self.model_config = self.config["open_source_models"]["llm"]["qwen"]
         self.sampling_percentage = self.config.get("sampling_percentage", 100)
         self.unable_to_respond_aware = self.config.get("unable_to_respond_aware", True)
+
+        # Extract base_image_dir from the input JSON file if present, else fallback to images_base_path
+        input_file = self.config.get("input_file")
+        self.images_base_path = self.config.get("images_base_path")
+        if input_file and os.path.exists(input_file):
+            try:
+                with open(input_file) as f_in:
+                    in_data = json.load(f_in)
+                    if "base_image_dir" in in_data:
+                        self.images_base_path = in_data["base_image_dir"]
+                        print(f"Extracted images_base_path from input file: {self.images_base_path}")
+            except Exception as e:
+                print(f"Warning: could not parse base_image_dir from input file {input_file}: {e}")
+
         self.initialize_model()
 
     def _create_prompt(self, question, ocr_text=None):
@@ -131,7 +145,7 @@ class QwenVQAEvaluator:
                 # Use the full path as the key since that's what we use in generate_answer
                 image_filename = os.path.basename(page_id)
                 image_path = os.path.join(
-                    self.config["images_base_path"], image_filename
+                    self.images_base_path, image_filename
                 )
                 ocr_text[image_path] = page_ocr
                 # print(f"Extracted OCR text for page: {image_filename}")
@@ -364,7 +378,7 @@ class QwenVQAEvaluator:
             # 1. Resolve images
             pages = item["layout_analysis"]["pages"]
             image_paths = [
-                os.path.join(self.config["images_base_path"], os.path.basename(p_id))
+                os.path.join(self.images_base_path, os.path.basename(p_id))
                 for p_id in pages
             ]
 
@@ -412,7 +426,7 @@ class QwenVQAEvaluator:
 
         # Resolve raw page identifiers to absolute image paths
         image_paths = [
-            os.path.join(self.config["images_base_path"], os.path.basename(page_id))
+            os.path.join(self.images_base_path, os.path.basename(page_id))
             for page_id in pages
         ]
 

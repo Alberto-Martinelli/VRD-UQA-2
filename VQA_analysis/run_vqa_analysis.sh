@@ -42,7 +42,7 @@ uv run python VQA_analysis/pipeline/1_unable_converter.py
 uv run python VQA_analysis/pipeline/2_adding_informations.py
 
 # ------ RUN THE RESULT ANALYSIS ------
-uv run python VQA_analysis/pipeline/3_result_analysis.py --dataset MPDocVQA --images_path needed_images_2
+uv run python VQA_analysis/pipeline/3_result_analysis.py --dataset DUDE
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 
