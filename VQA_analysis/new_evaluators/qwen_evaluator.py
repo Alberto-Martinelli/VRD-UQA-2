@@ -85,7 +85,17 @@ class QwenVQAEvaluator:
 
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_name, **model_kwargs
-        ).eval()
+        )
+
+        # Dynamically attach LoRA adapter if path is supplied
+        adapter_path = self.model_config.get("adapter_path")
+        if adapter_path:
+            resolved_adapter_path = os.path.abspath(os.path.expandvars(os.path.expanduser(adapter_path)))
+            print(f"Loading PEFT/LoRA adapter from: {resolved_adapter_path}")
+            from peft import PeftModel
+            self.model = PeftModel.from_pretrained(self.model, resolved_adapter_path)
+
+        self.model = self.model.eval()
 
         self.max_tokens = self.model_config.get("max_tokens", 1024)
         print("Qwen model initialized successfully")
@@ -267,6 +277,12 @@ class QwenVQAEvaluator:
             shot_type = few_shot_config.get("shot_type", "mixed")
             processing_folder += f"_fewshot_{shot_type}_{n_shots}"
 
+        # Add adapter suffix if PEFT adapter is loaded
+        adapter_path = self.model_config.get("adapter_path")
+        if adapter_path:
+            adapter_name = os.path.basename(adapter_path.rstrip("/"))
+            processing_folder += f"_{adapter_name}"
+
         # Create output filename with model name
         output_filename = f"{self.model_config['name']}_vqa_analysis_results.json"
 
@@ -420,6 +436,7 @@ class QwenVQAEvaluator:
                 "batch_size": self.model_config.get("batch_size", 1),
                 "max_tokens": self.max_tokens,
                 "use_flash_attention": self.model_config.get("use_flash_attention", False),
+                "adapter_path": self.model_config.get("adapter_path", None),
             },
             "ocr_enabled": bool(ocr_text),
             "few_shot_config": self.config.get("few_shot", {"enabled": False}),

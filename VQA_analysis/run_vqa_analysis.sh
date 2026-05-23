@@ -31,7 +31,7 @@ uv --version
 export UV_LINK_MODE=copy
 uv sync
 # ------ RUN THE QWEN EVALUATOR ------ 
-uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path VQA_analysis/config.json
+uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path VQA_analysis/config_lora.json
 
 # cp VQA_analysis/models/results/MPDocVQA/LLM/results_w2_UNABLE/original/Qwen_vqa_analysis_results.json $HOME/VRD-UQA/
 
