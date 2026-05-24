@@ -8,7 +8,7 @@ from langdetect import detect, LangDetectException
 OUT_DIR = "data/BDocs/BDocs_val_300/qas"
 
 
-def load_BDocs(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR):
+def load_BDocs(split_type: str, max_questions: int = 300, offset: int = 0, out_dir: str = OUT_DIR):
     # 1. HPC Path Management
     # Use absolute paths so the corruption pipeline can find them from anywhere
     base_dir = os.path.abspath(os.getcwd())
@@ -26,6 +26,7 @@ def load_BDocs(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR
     shuffled_dataset = dataset.shuffle(seed=42)
 
     flattened_data = []
+    skipped_count = 0
 
     for doc in tqdm(shuffled_dataset, desc="Flattening Documents"):
         if len(flattened_data) >= max_questions:
@@ -48,6 +49,8 @@ def load_BDocs(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR
             continue # Skip if JSON is malformed
             
         for qa_id, content in qa_dict.items():
+            if len(flattened_data) >= max_questions:
+                break
             question_text = content.get("question", "")
             
             # --- Step B1: Filter for English ---
@@ -85,6 +88,12 @@ def load_BDocs(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR
                 "doc_id": doc_id,
                 "source": doc.get("source")
             }
+            
+            # Step 2: Skip the first 'offset' valid questions for disjoint sets
+            if skipped_count < offset:
+                skipped_count += 1
+                continue
+
             flattened_data.append(entry)
 
     # 3. Wrap and Save
@@ -106,6 +115,7 @@ def load_BDocs(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR
 
 if __name__ == "__main__":
     split = "val"
-    questions_to_process = 1000
-    corrupted_questions_desired = 300
-    load_BDocs(split, max_questions=questions_to_process, out_dir=f"data/BDocs/BDocs_{split}_{corrupted_questions_desired}/qas")
+    corrupted_questions_desired = 250
+    questions_to_process = 3 * corrupted_questions_desired
+    offset = 0
+    load_BDocs(split, max_questions=questions_to_process, offset=offset, out_dir=f"data/BDocs/BDocs_{split}_{corrupted_questions_desired}/qas")

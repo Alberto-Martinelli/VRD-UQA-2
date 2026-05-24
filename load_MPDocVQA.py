@@ -8,15 +8,18 @@ SOURCE_DIR = "/home/amartinelli/MPDocVQA/MPDocVQA_complete/qas"
 OUT_DIR = "data/MPDocVQA/MPDocVQA_test_250/qas"
 
 
-def load_MPDocVQA(split_type: str, max_questions: int = 300, source_dir: str = SOURCE_DIR, out_dir: str = OUT_DIR):
+def load_MPDocVQA(split_type: str, max_questions: int = 300, offset: int = 0, source_dir: str = SOURCE_DIR, out_dir: str = OUT_DIR):
     source = os.path.join(source_dir, f"{split_type}.json")
     with open(source) as f:
         full = json.load(f)
 
     print(f"Total questions in {split_type} split: {len(full['data'])}")
 
+    # Reproducibly shuffle the entire data and slice from offset for disjoint sets
+    temp_data = list(full["data"])
     random.seed(42)
-    sampled = random.sample(full["data"], min(max_questions, len(full["data"])))
+    random.shuffle(temp_data)
+    sampled = temp_data[offset : min(offset + max_questions, len(temp_data))]
 
     os.makedirs(out_dir, exist_ok=True)
     output = {**full, "data": sampled}
@@ -47,7 +50,8 @@ def load_MPDocVQA(split_type: str, max_questions: int = 300, source_dir: str = S
 
 
 if __name__ == "__main__":
-    split = "train"
-    questions_to_process = 300
-    corrupted_questions_desired = 50
-    load_MPDocVQA(split, max_questions=questions_to_process, source_dir=SOURCE_DIR, out_dir=f"data/MPDocVQA/MPDocVQA_{split}_{corrupted_questions_desired}/qas")
+    split = "val"
+    corrupted_questions_desired = 250
+    questions_to_process = 3 * corrupted_questions_desired
+    offset = 0
+    load_MPDocVQA(split, max_questions=questions_to_process, offset=offset, source_dir=SOURCE_DIR, out_dir=f"data/MPDocVQA/MPDocVQA_{split}_{corrupted_questions_desired}/qas")

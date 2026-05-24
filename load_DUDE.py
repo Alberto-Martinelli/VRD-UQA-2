@@ -5,14 +5,14 @@ from datasets import load_dataset
 OUT_DIR = "data/DUDE/DUDE_val_300/qas"
 
 
-def load_DUDE(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR):
+def load_DUDE(split_type: str, max_questions: int = 300, offset: int = 0, out_dir: str = OUT_DIR):
     dataset = load_dataset("jordyvl/DUDE_loader", split=split_type, trust_remote_code=True)
 
     print("First example:\n", dataset[0])
     print("\nColumn names:\n", dataset.column_names)
     print("\nDataset length:\n", len(dataset))
 
-    small_dataset = dataset.shuffle(seed=42).select(range(max_questions))
+    small_dataset = dataset.shuffle(seed=42).select(range(offset, offset + max_questions))
 
     output_data = {
         "dataset_name": "DUDE",
@@ -29,6 +29,7 @@ def load_DUDE(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR)
 
 if __name__ == "__main__":
     split = "val"
-    questions_to_process = 1000
-    corrupted_questions_desired = 300
-    load_DUDE(split, max_questions=questions_to_process, out_dir=f"data/DUDE/DUDE_{split}_{corrupted_questions_desired}/qas")
+    corrupted_questions_desired = 250
+    questions_to_process = 3 * corrupted_questions_desired
+    offset = 0
+    load_DUDE(split, max_questions=questions_to_process, offset=offset, out_dir=f"data/DUDE/DUDE_{split}_{corrupted_questions_desired}/qas")

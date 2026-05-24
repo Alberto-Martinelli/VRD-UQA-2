@@ -8,7 +8,7 @@ from PIL import Image
 OUT_DIR = "data/SlideVQA/SlideVQA_val_300/qas"
 
 
-def load_SlideVQA(split_type: str, max_questions: int = 300, out_dir: str = OUT_DIR):
+def load_SlideVQA(split_type: str, max_questions: int = 300, offset: int = 0, out_dir: str = OUT_DIR):
     # 1. Get the Absolute Base Directory 
     # This will resolve to /mnt/beegfs/amartinelli/download_SlideVQA/VRD-UQA/
     base_dir = os.path.abspath(os.getcwd())
@@ -22,7 +22,7 @@ def load_SlideVQA(split_type: str, max_questions: int = 300, out_dir: str = OUT_
     os.makedirs(image_dir, exist_ok=True)
 
     # 4. Select a small sample
-    small_dataset = dataset.shuffle(seed=42).select(range(max_questions))
+    small_dataset = dataset.shuffle(seed=42).select(range(offset, offset + max_questions))
 
     processed_data = []
     print(f"Processing {len(small_dataset)} questions and extracting images...")
@@ -90,6 +90,7 @@ def load_SlideVQA(split_type: str, max_questions: int = 300, out_dir: str = OUT_
 
 if __name__ == "__main__":
     split = "val"
-    questions_to_process = 1000
-    corrupted_questions_desired = 300
-    load_SlideVQA(split, max_questions=questions_to_process, out_dir=f"data/SlideVQA/SlideVQA_{split}_{corrupted_questions_desired}/qas")
+    corrupted_questions_desired = 250
+    questions_to_process = 3 * corrupted_questions_desired
+    offset = 0
+    load_SlideVQA(split, max_questions=questions_to_process, offset=offset, out_dir=f"data/SlideVQA/SlideVQA_{split}_{corrupted_questions_desired}/qas")

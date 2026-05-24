@@ -87,10 +87,10 @@ uv run python corruption-scripts/corruption/generate_exact_dataset.py \
     --config "$CONFIG" \
     --target "$N" \
     --batch_size 25 \
-    --output "corruption-scripts/results/${DATASET}_unanswerable_corrupted_questions_just_false.json"
+    --output "corruption-scripts/results/${SPLIT}_${N}_${DATASET}_unanswerable_corrupted_questions_just_false.json"
 
 # Copy the final perfect pool of exactly 300 verified questions back to your persistent workspace
-cp "corruption-scripts/results/${DATASET}_unanswerable_corrupted_questions_just_false.json" "$HOME/VRD-UQA/"
+cp "corruption-scripts/results/${SPLIT}_${N}_${DATASET}_unanswerable_corrupted_questions_just_false.json" "$HOME/VRD-UQA/"
 
 
 mv "$HOME"/slurm* "$HOME/VRD-UQA/" 2>/dev/null || true
