@@ -5,6 +5,7 @@ note.txt
 old_scripts/
 next_steps/
 helper_scripts/
+other_scripts/
 download_dataset.sh
 
 put_images_script.py
@@ -13,13 +14,13 @@ put_images_script_for_verified.py
 corruption-scripts/results/
 data/
 data_standard_pipeline/
-data_wrong/
 needed_images_2/
 results_w2_UNABLE/
 results/
 finetuning/qwen25vl*
 
-INFO.md 
+INFO.md
+CLAUDE.md
 
 slurm-*.out
 

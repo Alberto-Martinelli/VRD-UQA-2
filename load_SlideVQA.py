@@ -4,21 +4,16 @@ from datasets import load_dataset
 from tqdm import tqdm
 from PIL import Image
 
+SCRATCH_FLASH = '/mnt/beegfs/amartinelli/'
+IMAGES_PATH = 'SlideVQA_images/'
 
-OUT_DIR = "data/SlideVQA/SlideVQA_val_300/qas"
-
-
-def load_SlideVQA(split_type: str, max_questions: int = 300, offset: int = 0, out_dir: str = OUT_DIR):
-    # 1. Get the Absolute Base Directory 
-    # This will resolve to /mnt/beegfs/amartinelli/download_SlideVQA/VRD-UQA/
-    base_dir = os.path.abspath(os.getcwd())
-
+def load_SlideVQA(split_type: str, max_questions: int = 300, offset: int = 0, out_dir: str = 'data/SlideVQA/SlideVQA_val_300/qas'):
     # 2. Load the dataset
     print("Loading SlideVQA dataset from HuggingFace...")
     dataset = load_dataset("NTT-hil-insight/SlideVQA", split=split_type, trust_remote_code=True)
 
     # 3. Setup directories for images using absolute paths
-    image_dir = os.path.join(base_dir, f"data/SlideVQA/images/{split_type}")
+    image_dir = os.path.join(SCRATCH_FLASH, IMAGES_PATH)
     os.makedirs(image_dir, exist_ok=True)
 
     # 4. Select a small sample

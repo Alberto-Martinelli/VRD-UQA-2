@@ -4,15 +4,13 @@ from datasets import load_dataset
 from tqdm import tqdm
 from langdetect import detect, LangDetectException
 
+SCRATCH_FLASH = '/mnt/beegfs/amartinelli/'
+IMAGES_PATH = 'BDocs_images/'
 
-OUT_DIR = "data/BDocs/BDocs_val_300/qas"
-
-
-def load_BDocs(split_type: str, max_questions: int = 300, offset: int = 0, out_dir: str = OUT_DIR):
+def load_BDocs(split_type: str, max_questions: int = 300, offset: int = 0, out_dir: str = 'data/BDocs/BDocs_val_300/qas'):
     # 1. HPC Path Management
     # Use absolute paths so the corruption pipeline can find them from anywhere
-    base_dir = os.path.abspath(os.getcwd())
-    image_dir = os.path.join(base_dir, "data/BoundingDocs/images/" + split_type)
+    image_dir = os.path.join(SCRATCH_FLASH, IMAGES_PATH)
     os.makedirs(image_dir, exist_ok=True)
 
     # 2. Load Dataset

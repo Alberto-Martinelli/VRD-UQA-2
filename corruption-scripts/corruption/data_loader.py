@@ -28,6 +28,7 @@ class DataLoader:
             df = pd.DataFrame(raw_dataset_dict["data"])
             df["docId"] = df["doc_id"]
             df["questionId"] = df["questionId"].astype(str)
+            # The returned dataframe must contain a field 'document' with absolute image paths
             df["document"] = df["page_ids"].apply(
                 lambda x: [
                     os.path.join(base_image_dir, f"{page_id}.jpg") for page_id in x
@@ -62,6 +63,7 @@ class DataLoader:
                 & (df["answers"].apply(check_answers))
             ]
 
+            # For DUDE we provide in input PDFs path inside the Hugging Face cache, then with those we derive the image paths (also inside the Hugging Face cache)
             # Derive image_dir dynamically based on the environment (Mac vs Linux HPC)
             sample_doc = df.iloc[0]["document"] if len(df) > 0 else ""
             if "PDF" in str(sample_doc):
@@ -124,6 +126,8 @@ class DataLoader:
             # Create DataFrame with same structure as MPDocVQA
             df = pd.DataFrame(raw_dataset_dict["data"])
 
+            # For SlideVQA we provide in input absolute image paths, so no change is needed here
+
             # Derive base_image_dir from the first document entry (absolute paths in train.json)
             first_doc = df.iloc[0]["document"] if len(df) > 0 else None
             first_page = first_doc[0] if isinstance(first_doc, list) and first_doc else (first_doc if isinstance(first_doc, str) else "")
@@ -167,6 +171,8 @@ class DataLoader:
                 df = pd.DataFrame(raw_dataset_dict["data"])
             else:
                 df = pd.DataFrame(raw_dataset_dict)
+
+            # For Bounding Docs we provide in input absolute image paths, so no change is needed here
 
             # Derive base_image_dir from the first document entry (absolute paths in train.json)
             first_doc = df.iloc[0]["document"] if len(df) > 0 else None
