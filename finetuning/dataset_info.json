@@ -1,6 +1,26 @@
 {
+  "vrd_uqa_train": {
+    "file_name": "dataset/train.json",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "images": "images"
+    }
+  },
+  "vrd_uqa_val": {
+    "file_name": "dataset/val.json",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "images": "images"
+    }
+  },
   "vrd_uqa_smoke": {
-    "file_name": "train.json",
+    "file_name": "dataset/train.json",
     "formatting": "alpaca",
     "columns": {
       "prompt": "instruction",

@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=0-04:00:00
+#SBATCH --time=0-08:00:00
 #SBATCH --partition=gpu_a40
 #SBATCH --gres=gpu:1
 #SBATCH --output=slurm-finetune-%j.out
@@ -59,7 +59,7 @@ uv pip install --reinstall --index-url https://download.pytorch.org/whl/cu121 \
 uv pip install qwen-vl-utils
 
 # ---- Train ----
-CONFIG="$WORK_DIR/VRD-UQA/finetuning/qwen25vl_lora_smoke.yaml"
+CONFIG="$WORK_DIR/VRD-UQA/finetuning/qwen25vl_lora_sft.yaml"
 echo "Using config: $CONFIG"
 cat "$CONFIG"
 
