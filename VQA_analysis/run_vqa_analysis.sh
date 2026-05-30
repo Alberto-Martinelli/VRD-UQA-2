@@ -31,21 +31,24 @@ uv --version
 export UV_LINK_MODE=copy
 uv sync
 
-CONFIG="VQA_analysis/config_lora.json"
+ZS_CONFIG="VQA_analysis/config_zeroshot.json"
+FS_CONFIG="VQA_analysis/config_fewshot.json"
 
-# ------ RUN THE QWEN EVALUATOR ------
-uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path $CONFIG
+# ------ PASS 1: ZERO-SHOT ------
+echo "=== Qwen2.5 — zero-shot ==="
+uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $ZS_CONFIG
 
-# cp VQA_analysis/models/results/MPDocVQA/LLM/results_w2_UNABLE/original/Qwen_vqa_analysis_results.json $HOME/VRD-UQA/
+# ------ PASS 2: FEW-SHOT ------
+echo "=== Qwen2.5 — few-shot ==="
+uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG
 
-# ------ RUN THE UNABLE CONVERTER ------
+# Normalize + enrich once (auto-skips already-processed files)
 uv run python VQA_analysis/pipeline/1_normalize_unanswerable_responses.py
-
-# ------ RUN THE ADDING INFORMATIONS ------
 uv run python VQA_analysis/pipeline/2_enrich_metadata.py
 
-# ------ RUN THE RESULT ANALYSIS ------
-uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $CONFIG
+# Metrics per condition
+uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $ZS_CONFIG
+uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $FS_CONFIG
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 
