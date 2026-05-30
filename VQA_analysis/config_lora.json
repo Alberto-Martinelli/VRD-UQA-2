@@ -157,10 +157,10 @@
             }
         }
     },
-    "input_file": "VQA_analysis/DUDE_unanswerable_corrupted_questions_just_false_sample.json",
-    "dataset": "DUDE",
+    "input_file": "VQA_analysis/SlideVQA_unanswerable_corrupted_questions_just_false.json",
+    "dataset": "SlideVQA",
     "output_file": "vqa_analysis_results.json",
-    "sampling_percentage": 100,
+    "sampling_percentage": 50,
     "ocr_enabled": false,
     "unable_to_respond_aware": false,
     "few_shot": {

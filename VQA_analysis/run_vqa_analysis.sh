@@ -30,8 +30,11 @@ cd $SCRATCH_FLASH/VQA_analysis/
 uv --version
 export UV_LINK_MODE=copy
 uv sync
-# ------ RUN THE QWEN EVALUATOR ------ 
-uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path VQA_analysis/config_lora.json
+
+CONFIG="VQA_analysis/config_lora.json"
+
+# ------ RUN THE QWEN EVALUATOR ------
+uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path $CONFIG
 
 # cp VQA_analysis/models/results/MPDocVQA/LLM/results_w2_UNABLE/original/Qwen_vqa_analysis_results.json $HOME/VRD-UQA/
 
@@ -42,7 +45,7 @@ uv run python VQA_analysis/pipeline/1_unable_converter.py
 uv run python VQA_analysis/pipeline/2_adding_informations.py
 
 # ------ RUN THE RESULT ANALYSIS ------
-uv run python VQA_analysis/pipeline/3_result_analysis.py --dataset DUDE
+uv run python VQA_analysis/pipeline/3_result_analysis.py --config $CONFIG
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 

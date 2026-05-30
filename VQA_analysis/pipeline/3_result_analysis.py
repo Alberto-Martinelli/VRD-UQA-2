@@ -1003,7 +1003,18 @@ def generate_analysis_report(dataset, images_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate VQA analysis report")
-    parser.add_argument("--dataset", type=str, default="MPDocVQA", help="Dataset name (must match the folder under models/results/)")
+    parser.add_argument("--config", type=str, default=None, help="Path to config.json. If provided, dataset is read from it (overridden by --dataset).")
+    parser.add_argument("--dataset", type=str, default=None, help="Dataset name (folder under models/results/). Overrides --config if both are given.")
     parser.add_argument("--images_path", type=str, default=None, help="Path to the images directory (optional fallback)")
     args = parser.parse_args()
-    generate_analysis_report(dataset=args.dataset, images_path=args.images_path)
+
+    if args.dataset:
+        dataset = args.dataset
+    elif args.config:
+        with open(args.config) as f:
+            dataset = json.load(f)["dataset"]
+        print(f"Dataset from config: {dataset}")
+    else:
+        parser.error("Either --config or --dataset must be provided.")
+
+    generate_analysis_report(dataset=dataset, images_path=args.images_path)
