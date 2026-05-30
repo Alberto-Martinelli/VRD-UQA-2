@@ -39,13 +39,13 @@ uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path $CONFI
 # cp VQA_analysis/models/results/MPDocVQA/LLM/results_w2_UNABLE/original/Qwen_vqa_analysis_results.json $HOME/VRD-UQA/
 
 # ------ RUN THE UNABLE CONVERTER ------
-uv run python VQA_analysis/pipeline/1_unable_converter.py
+uv run python VQA_analysis/pipeline/1_normalize_unanswerable_responses.py
 
 # ------ RUN THE ADDING INFORMATIONS ------
-uv run python VQA_analysis/pipeline/2_adding_informations.py
+uv run python VQA_analysis/pipeline/2_enrich_metadata.py
 
 # ------ RUN THE RESULT ANALYSIS ------
-uv run python VQA_analysis/pipeline/3_result_analysis.py --config $CONFIG
+uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $CONFIG
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 
