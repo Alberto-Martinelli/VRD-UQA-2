@@ -59,7 +59,7 @@ class QwenVQAEvaluator:
                 f"- Provide concise, focused answers (single word or short phrase preferred)\n"
                 f"- Base your answer on both the image and the provided OCR text\n"
                 f"{unable_to_respond_line}\n"
-                f"Question: {question}\n"
+                f"Question: {question}"
             )
         return (
             f"You are an AI assistant specialized in analyzing document images. "
@@ -67,7 +67,7 @@ class QwenVQAEvaluator:
             f"Guidelines:\n"
             f"- Provide concise, focused answers (single word or short phrase preferred)\n"
             f"- Base your answer solely on what you see in the image\n"
-            f"{unable_to_respond_line}\n"
+            f"{unable_to_respond_line}\n" if self.unable_to_respond_aware else ""
             f"Question: {question}"
         )
 
