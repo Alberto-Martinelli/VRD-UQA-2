@@ -11,7 +11,7 @@ lora_target: all
 
 ### dataset
 dataset: vrd_uqa_smoke
-dataset_dir: /home/amartinelli/VRD-UQA/finetuning
+dataset_dir: /mnt/beegfs/amartinelli/finetune_qwen25vl/VRD-UQA/finetuning
 template: qwen2_vl
 cutoff_len: 4096
 max_samples: 1000

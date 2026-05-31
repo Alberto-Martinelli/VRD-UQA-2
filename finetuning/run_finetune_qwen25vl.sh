@@ -3,8 +3,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=0-08:00:00
-#SBATCH --partition=gpu_a40
+#SBATCH --time=0-12:00:00
+#SBATCH --partition=gpu_a100
 #SBATCH --gres=gpu:1
 #SBATCH --output=slurm-finetune-%j.out
 
@@ -27,8 +27,7 @@ mkdir -p "$WORK_DIR"
 # ---- Sync repo (for finetuning configs & train.json) ----
 rsync -av \
   --exclude='.git' --exclude='.venv' \
-  --exclude='data/DUDE' --exclude='data/BDocs' \
-  --exclude='data/SlideVQA' --exclude='data/MPDocVQA' \
+  --exclude='data' --exclude='data_standard_pipeline' \
   --exclude='corruption-scripts/results' \
   "$HOME/VRD-UQA/" "$WORK_DIR/VRD-UQA/"
 
