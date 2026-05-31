@@ -174,6 +174,13 @@ class QwenVQAEvaluator:
             }
 
         try:
+            # Warn about any image paths that don't exist before attempting inference
+            missing = [p for p in image_paths if not os.path.exists(p)]
+            if missing:
+                print(f"WARNING: {len(missing)} image path(s) not found on disk:")
+                for p in missing:
+                    print(f"  [MISSING] {p}")
+
             window_size = self.model_config.get("batch_size", 1)
             if window_size > 1:
                 stride = self.model_config.get("stride", window_size // 2)
@@ -346,6 +353,23 @@ class QwenVQAEvaluator:
         # Exclude the current item to prevent data leakage
         pool = [item for item in dataset_pool if item != current_item]
         if not pool:
+            return []
+
+        # Filter out candidates whose image files are missing on disk
+        valid_pool = []
+        for item in pool:
+            pages = item.get("layout_analysis", {}).get("pages", {})
+            missing = [
+                p_id for p_id in pages
+                if not os.path.exists(os.path.join(self.images_base_path, os.path.basename(p_id)))
+            ]
+            if missing:
+                print(f"WARNING: few-shot candidate skipped — missing images: {missing}")
+            else:
+                valid_pool.append(item)
+        pool = valid_pool
+        if not pool:
+            print("WARNING: no few-shot candidates have valid image paths; skipping few-shot.")
             return []
 
         if shot_type == "answerable":

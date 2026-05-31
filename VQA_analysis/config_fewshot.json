@@ -44,7 +44,7 @@
         }
     },
     "dataset": "BDocs",
-    "input_file": "VQA_analysis/evaluation_files/sample5/BDocs_sample5.json",
+    "input_file": "VQA_analysis/evaluation_files/complete/BDocs_unanswerable_corrupted_questions_just_false.json",
     "output_file": "vqa_analysis_results.json",
     "sampling_percentage": 100,
     "ocr_enabled": true,

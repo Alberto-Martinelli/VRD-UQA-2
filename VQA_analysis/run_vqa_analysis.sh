@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1 # one process
 #SBATCH --cpus-per-task=4 # 4 cores per process
 #SBATCH --mem=32G # RAM memory
-#SBATCH --time=0-5:00:00 # max wall time (D-HH:MM:SS)
+#SBATCH --time=0-8:00:00 # max wall time (D-HH:MM:SS)
 #SBATCH --partition=gpu_a40 # partition name
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-VQA_analysis-%j.out # output file name
