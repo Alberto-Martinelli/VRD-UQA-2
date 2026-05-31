@@ -72,6 +72,11 @@ class QwenVQAEvaluator:
         )
 
     def initialize_model(self):
+        if self.config.get("mock", False):
+            print("Mock mode enabled — skipping model initialization")
+            self.max_tokens = self.model_config.get("max_tokens", 1024)
+            return
+
         print("Initializing Qwen model...")
         print("Model configuration:", self.model_config)
         model_name = self.model_config["model_name"]
@@ -121,8 +126,9 @@ class QwenVQAEvaluator:
         if hasattr(self, "processor"):
             del self.processor
         gc.collect()
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
 
     def get_sorted_ocr_text(self, layout_analysis):
         """Extract and sort OCR text by bounding box position"""
@@ -157,6 +163,16 @@ class QwenVQAEvaluator:
 
     def generate_answer(self, question, image_paths, ocr_text=None, few_shot_turns=None):
         """Generates model responses using a robust sliding-window image context and optional few-shot demonstrations."""
+        if self.config.get("mock", False):
+            window_size = self.model_config.get("batch_size", 1)
+            windows = [image_paths[i:i + window_size] for i in range(0, len(image_paths), window_size)]
+            return {
+                "answer": [{"pages": w, "answer": "Mock answer"} for w in windows],
+                "query": question,
+                "image_paths": image_paths,
+                "analysis_type": f"window_size_{window_size}_mock",
+            }
+
         try:
             window_size = self.model_config.get("batch_size", 1)
             if window_size > 1:
