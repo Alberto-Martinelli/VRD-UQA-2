@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1 # one process
 #SBATCH --cpus-per-task=4 # 4 cores per process
 #SBATCH --mem=32G # RAM memory
-#SBATCH --time=0-23:59:00 # max wall time (D-HH:MM:SS)
+#SBATCH --time=0-5:00:00 # max wall time (D-HH:MM:SS)
 #SBATCH --partition=gpu_a40 # partition name
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-VQA_analysis-%j.out # output file name
@@ -35,11 +35,11 @@ ZS_CONFIG="VQA_analysis/config_zeroshot.json"
 FS_CONFIG="VQA_analysis/config_fewshot.json"
 
 # ------ PASS 1: ZERO-SHOT ------
-echo "=== Qwen2.5 — zero-shot ==="
+printf "\n\n=== QWEN2.5 — ZERO-SHOT ==="
 uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $ZS_CONFIG
 
 # ------ PASS 2: FEW-SHOT ------
-echo "=== Qwen2.5 — few-shot ==="
+printf "\n\n=== QWEN2.5 — FEW-SHOT ==="
 uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG
 
 # Normalize + enrich once (auto-skips already-processed files)

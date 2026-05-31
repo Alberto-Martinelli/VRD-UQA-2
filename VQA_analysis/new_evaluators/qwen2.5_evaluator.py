@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import argparse
@@ -117,10 +118,11 @@ class QwenVQAEvaluator:
     def _cleanup_model(self):
         if hasattr(self, "model"):
             del self.model
-            torch.cuda.empty_cache()
-            import gc
-
-            gc.collect()
+        if hasattr(self, "processor"):
+            del self.processor
+        gc.collect()
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
 
     def get_sorted_ocr_text(self, layout_analysis):
         """Extract and sort OCR text by bounding box position"""
@@ -535,6 +537,7 @@ def main():
     args = parser.parse_args()
     config_path = args.config_path
     evaluator = QwenVQAEvaluator(config_path)
+    print("Starting QWEN 2.5 evaluator")
     evaluator.evaluate()
 
 
