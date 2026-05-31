@@ -67,8 +67,8 @@ class QwenVQAEvaluator:
             f"Guidelines:\n"
             f"- Provide concise, focused answers (single word or short phrase preferred)\n"
             f"- Base your answer solely on what you see in the image\n"
-            f"{unable_to_respond_line}\n" if self.unable_to_respond_aware else ""
-            f"Question: {question}"
+            + (f"{unable_to_respond_line}\n" if self.unable_to_respond_aware else "")
+            + f"Question: {question}"
         )
 
     def initialize_model(self):
@@ -332,36 +332,22 @@ class QwenVQAEvaluator:
         if not pool:
             return []
 
-        selected_shots = []
-
         if shot_type == "answerable":
-            candidates = [item for item in pool if item.get("original_answer_locations")]
-            if not candidates:
-                candidates = pool
-            selected_shots = random.sample(candidates, min(n_shots, len(candidates)))
-            return [{"type": "answerable", "item": s} for s in selected_shots]
+            selected = random.sample(pool, min(n_shots, len(pool)))
+            return [{"type": "answerable", "item": s} for s in selected]
 
         elif shot_type == "unanswerable":
-            candidates = [item for item in pool if item.get("is_corrupted", True)]
-            if not candidates:
-                candidates = pool
-            selected_shots = random.sample(candidates, min(n_shots, len(candidates)))
-            return [{"type": "unanswerable", "item": s} for s in selected_shots]
+            selected = random.sample(pool, min(n_shots, len(pool)))
+            return [{"type": "unanswerable", "item": s} for s in selected]
 
         elif shot_type == "mixed":
-            ans_candidates = [item for item in pool if item.get("original_answer_locations")]
-            unans_candidates = [item for item in pool if item.get("is_corrupted", True)]
-
-            if not ans_candidates:
-                ans_candidates = pool
-            if not unans_candidates:
-                unans_candidates = pool
-
             n_ans = n_shots // 2
             n_unans = n_shots - n_ans
 
-            ans_selected = random.sample(ans_candidates, min(n_ans, len(ans_candidates)))
-            unans_selected = random.sample(unans_candidates, min(n_unans, len(unans_candidates)))
+            # Sample without replacement across both roles to avoid using the same item twice
+            sampled = random.sample(pool, min(n_shots, len(pool)))
+            ans_selected = sampled[:n_ans]
+            unans_selected = sampled[n_ans:n_ans + n_unans]
 
             shots = [{"type": "answerable", "item": s} for s in ans_selected]
             shots.extend([{"type": "unanswerable", "item": s} for s in unans_selected])
@@ -384,8 +370,16 @@ class QwenVQAEvaluator:
                 for p_id in pages
             ]
 
-            # 2. Get OCR if enabled
-            ocr_text = self.get_ocr_text(pages) if self.config.get("ocr_enabled", False) else None
+            # 2. Get OCR if enabled and format into a string matching generate_answer's batch_ocr
+            ocr_text = None
+            if self.config.get("ocr_enabled", False):
+                ocr_dict = self.get_ocr_text(pages)
+                ocr_lines = []
+                for i, path in enumerate(image_paths):
+                    page_ocr = ocr_dict.get(path, "")
+                    if page_ocr:
+                        ocr_lines.append(f"Page {i + 1}:\n{page_ocr}")
+                ocr_text = "\n\n".join(ocr_lines) if ocr_lines else None
 
             # 3. Determine prompt and correct answer
             if is_ans:
