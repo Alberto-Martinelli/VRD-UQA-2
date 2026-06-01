@@ -295,7 +295,10 @@ class QwenVQAEvaluator:
 
     def _save_results(self, data):
         # Construct base path
-        base_path = f"VQA_analysis/models/results/{self.config["dataset"]}/LLM"
+        base_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "models", "results", self.config["dataset"], "LLM"
+        )
 
         # Get window size from config
         window_size = self.model_config.get("batch_size", 1)

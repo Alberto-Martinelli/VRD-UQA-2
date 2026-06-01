@@ -249,8 +249,10 @@ def process_all_folders():
     """
     results_dir = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
 
+    print("\n\n")
     print(f"{'='*100}")
-    print(f"Adding Informations — scanning for converted results under: {results_dir}")
+    print(f"ADDING INFORMATIONS")
+    print(f"Scanning for converted results under: {results_dir}")
     if not results_dir.exists():
         print(f"ERROR: Results directory does not exist: {results_dir}")
         return
@@ -286,11 +288,9 @@ def process_all_folders():
 
                 print(f"\n{'-'*100}")
                 print(f"Processing : {input_path}")
-                print(f"Output     : {output_path}")
                 try:
                     process_vqa_file(str(input_path), str(output_path))
                     total_processed += 1
-                    print(f"Done       : {output_path.name}")
                 except Exception as e:
                     print(f"ERROR processing {input_path}: {e}")
                     total_errors += 1

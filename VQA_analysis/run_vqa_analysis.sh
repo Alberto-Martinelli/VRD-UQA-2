@@ -21,18 +21,33 @@ export SCRATCH_FLASH="/mnt/beegfs/amartinelli"
 
 export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
 
-rm -rf $SCRATCH_FLASH/VQA_analysis
-# mkdir -p $SCRATCH_FLASH/VQA_analysis/
-rsync -av --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' $HOME/VRD-UQA/ $SCRATCH_FLASH/VQA_analysis/
-cd $SCRATCH_FLASH/VQA_analysis/
+WORK_DIR=$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}
+
+rm -rf $WORK_DIR
+# mkdir -p $WORK_DIR
+rsync -aq --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' $HOME/VRD-UQA/ $WORK_DIR/
+cd $WORK_DIR
 # rm -rf .venv/
 
 uv --version
 export UV_LINK_MODE=copy
-uv sync
+uv sync -qq
 
+DATASET=$1
 ZS_CONFIG="VQA_analysis/config_zeroshot.json"
 FS_CONFIG="VQA_analysis/config_fewshot.json"
+
+# Patch dataset and input_file into the scratch copies (originals untouched)
+uv run python -c "
+import json, sys
+dataset = sys.argv[1]
+input_file = f'/home/amartinelli/VRD-UQA/VQA_analysis/evaluation_files/complete/{dataset}_unanswerable_corrupted_questions_just_false.json'
+for path in ['VQA_analysis/config_zeroshot.json', 'VQA_analysis/config_fewshot.json']:
+    cfg = json.load(open(path))
+    cfg['dataset'] = dataset
+    cfg['input_file'] = input_file
+    json.dump(cfg, open(path, 'w'), indent=4)
+" $DATASET
 
 # ------ PASS 1: ZERO-SHOT ------
 printf "\n\n=== QWEN2.5 — ZERO-SHOT ==="
@@ -48,11 +63,10 @@ uv run python VQA_analysis/pipeline/2_enrich_metadata.py
 
 # Metrics per condition
 uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $ZS_CONFIG
-uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $FS_CONFIG
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 
-cp -r $SCRATCH_FLASH/VQA_analysis/VQA_analysis/models/results $HOME/VRD-UQA
+cp -r $WORK_DIR/VQA_analysis/models/results $HOME/VRD-UQA/results_${SLURM_JOB_ID}
 
 
 ELAPSED=$(( SECONDS - START_TIME ))

@@ -926,7 +926,7 @@ def generate_analysis_report(dataset, images_path):
     entity_verifier = None  # EntityIdentifier(ENTITY_TYPES) — disabled, no external NER needed
     base_path = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
     dataset_path = base_path / dataset
-    print(f"Base path: {base_path}")
+    # print(f"Base path: {base_path}")
 
     if not dataset_path.is_dir():
         print(f"ERROR: {dataset_path} is not a directory")
@@ -1017,4 +1017,8 @@ if __name__ == "__main__":
     else:
         parser.error("Either --config or --dataset must be provided.")
 
+    print("\n\n")
+    print("="*100)
+    print("3. COMPUTE METRICS")
+    print("="*100)
     generate_analysis_report(dataset=dataset, images_path=args.images_path)

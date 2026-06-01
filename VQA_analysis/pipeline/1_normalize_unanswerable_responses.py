@@ -110,10 +110,9 @@ def label_vqa_answers(input_file, output_file):
     with open(input_file, "r") as f:
         data = json.load(f)
 
-    print(f"Processing file: {input_file}")
     # Process each corrupted question
     q_index = 0
-    for question in tqdm(data.get("corrupted_questions", [])):
+    for question in tqdm(data.get("corrupted_questions", []), mininterval=30):
         verification_result = question.get("verification_result", {})
         vqa_results = verification_result.get("vqa_results", [])
         if not vqa_results:
@@ -193,8 +192,9 @@ def process_all_folders():
     # which is relative to the project root (two levels above this file).
     results_dir = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
 
+    print("\n\n")
     print(f"{'='*100}")
-    print(f"Unable Converter — scanning for results under: {results_dir}")
+    print(f"UNABLE CONVERTER — scanning for results under: {results_dir}")
     if not results_dir.exists():
         print(f"ERROR: Results directory does not exist: {results_dir}")
         return
@@ -238,7 +238,8 @@ def process_all_folders():
                 continue
 
             print(f"\n{'-'*100}")
-            print(f"Processing : {input_path}")
+            print(f"Processing file: {os.path.basename(input_path)}")
+            print(f"Full input file path: {input_path}")
             print(f"Output     : {output_path}")
             try:
                 label_vqa_answers(str(input_path), str(output_path))
