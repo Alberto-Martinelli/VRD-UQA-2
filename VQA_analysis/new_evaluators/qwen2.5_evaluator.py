@@ -401,22 +401,38 @@ class QwenVQAEvaluator:
 
     def _build_few_shot_turns(self, shots):
         """Constructs conversational message turns for few-shot visual prompts."""
+        window_size = self.model_config.get("batch_size", 1)
         turns = []
         for shot in shots:
             item = shot["item"]
             is_ans = shot["type"] == "answerable"
 
-            # 1. Resolve images
-            pages = item["layout_analysis"]["pages"]
+            # 1. Select a window of batch_size pages anchored on the answer page
+            #    (original_answer_locations holds the answer page for both answerable
+            #    and unanswerable shots — for the latter it's the pre-corruption page).
+            all_pages = list(item["layout_analysis"]["pages"].keys())
+            anchor = 0
+            if item.get("original_answer_locations"):
+                answer_page = os.path.basename(
+                    item["original_answer_locations"][0]["page_id"]
+                )
+                all_basenames = [os.path.basename(p) for p in all_pages]
+                if answer_page in all_basenames:
+                    anchor = all_basenames.index(answer_page)
+
+            start = max(0, min(anchor - window_size // 2, len(all_pages) - window_size))
+            window_pages = all_pages[start:start + window_size]
+
             image_paths = [
                 os.path.join(self.images_base_path, os.path.basename(p_id))
-                for p_id in pages
+                for p_id in window_pages
             ]
 
             # 2. Get OCR if enabled and format into a string matching generate_answer's batch_ocr
             ocr_text = None
             if self.config.get("ocr_enabled", False):
-                ocr_dict = self.get_ocr_text(pages)
+                window_pages_dict = {p: item["layout_analysis"]["pages"][p] for p in window_pages}
+                ocr_dict = self.get_ocr_text(window_pages_dict)
                 ocr_lines = []
                 for i, path in enumerate(image_paths):
                     page_ocr = ocr_dict.get(path, "")
