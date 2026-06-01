@@ -7,11 +7,9 @@ the pipeline directory and writes converted files into a sibling 'converted/'
 folder, skipping files that have already been processed.
 """
 import json
-import time
 import os
 from pathlib import Path
 from tqdm import tqdm
-import logging
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -33,10 +31,9 @@ def load_classifier_model():
     if classifier_components is not None:
         return classifier_components
 
-    model_id = "Qwen/Qwen3-32B"
+    model_id = "Qwen/Qwen2.5-7B-Instruct"
     max_new_tokens = 64
     temperature = 0.0
-    enable_thinking = False
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(
@@ -57,7 +54,6 @@ def load_classifier_model():
         "tokenizer": tokenizer,
         "model": model,
         "generation_kwargs": generation_kwargs,
-        "enable_thinking": enable_thinking,
     }
     return classifier_components
 
@@ -83,7 +79,6 @@ def classify_unanswerable_answer(answer):
         messages,
         tokenize=False,
         add_generation_prompt=True,
-        enable_thinking=classifier["enable_thinking"],
     )
     inputs = classifier["tokenizer"]([text], return_tensors="pt").to(
         classifier["model"].device
@@ -171,7 +166,6 @@ def label_vqa_answers(input_file, output_file):
                 # Finally, if none of the above, use Gemini to evaluate
                 else:
                     converted_answer = classify_unanswerable_answer(original_answer)
-                    time.sleep(0.5)
 
                 # print(f"Original answer: {original_answer}")
                 # print(f"Converted answer: {converted_answer}")

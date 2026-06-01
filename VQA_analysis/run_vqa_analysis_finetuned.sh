@@ -3,8 +3,8 @@
 #SBATCH --ntasks=1 # one process
 #SBATCH --cpus-per-task=4 # 4 cores per process
 #SBATCH --mem=32G # RAM memory
-#SBATCH --time=0-16:00:00 # max wall time (D-HH:MM:SS)
-#SBATCH --partition=gpu_a40 # partition name
+#SBATCH --time=0-8:00:00 # max wall time (D-HH:MM:SS)
+#SBATCH --partition=gpu_a100 # partition name
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-VQA_analysis-%j.out # output file name
 
@@ -21,11 +21,12 @@ export SCRATCH_FLASH="/mnt/beegfs/amartinelli"
 
 export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
 
-WORK_DIR=$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}
+# WORK_DIR=$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}
+WORK_DIR=$SCRATCH_FLASH/VQA_analysis_1746778
 
-rm -rf $WORK_DIR
+# rm -rf $WORK_DIR
 # mkdir -p $WORK_DIR
-rsync -aq --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' --exclude='finetuning' $HOME/VRD-UQA/ $WORK_DIR/
+# rsync -aq --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' $HOME/VRD-UQA/ $WORK_DIR/
 cd $WORK_DIR
 # rm -rf .venv/
 
@@ -54,8 +55,8 @@ for path in ['VQA_analysis/config_zeroshot.json', 'VQA_analysis/config_fewshot.j
 # uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $ZS_CONFIG
 
 # ------ PASS 2: FEW-SHOT ------
-printf "\n\n=== QWEN2.5 — FEW-SHOT FINETUNED ==="
-uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned
+# printf "\n\n=== QWEN2.5 — FEW-SHOT ==="
+# uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG
 
 # ------ PASS 3: FINE-TUNING ------
 
@@ -64,7 +65,7 @@ uv run python VQA_analysis/pipeline/1_normalize_unanswerable_responses.py
 uv run python VQA_analysis/pipeline/2_enrich_metadata.py
 
 # Metrics per condition
-uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $FS_CONFIG
+uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $ZS_CONFIG
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 
