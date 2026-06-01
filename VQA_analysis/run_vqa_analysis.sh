@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1 # one process
 #SBATCH --cpus-per-task=4 # 4 cores per process
 #SBATCH --mem=32G # RAM memory
-#SBATCH --time=0-8:00:00 # max wall time (D-HH:MM:SS)
+#SBATCH --time=0-12:00:00 # max wall time (D-HH:MM:SS)
 #SBATCH --partition=gpu_a40 # partition name
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-VQA_analysis-%j.out # output file name
@@ -56,6 +56,8 @@ uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $ZS
 # ------ PASS 2: FEW-SHOT ------
 printf "\n\n=== QWEN2.5 — FEW-SHOT ==="
 uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG
+
+# ------ PASS 3: FINE-TUNING ------
 
 # Normalize + enrich once (auto-skips already-processed files)
 uv run python VQA_analysis/pipeline/1_normalize_unanswerable_responses.py

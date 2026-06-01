@@ -19,12 +19,17 @@ from tqdm.auto import tqdm
 
 
 class QwenVQAEvaluator:
-    def __init__(self, config_path):
+    def __init__(self, config_path, finetuned):
         with open(config_path) as f:
             self.config = json.load(f)
 
         # Get Qwen-specific configuration - now nested under "llm"
-        self.model_config = self.config["open_source_models"]["qwen2.5"]
+        self.finetuned = finetuned
+        if self.finetuned:
+            self.model_config = self.config["open_source_models"]["qwen2.5_finetuned"]
+        else:
+            self.model_config = self.config["open_source_models"]["qwen2.5"]
+
         self.sampling_percentage = self.config.get("sampling_percentage", 100)
         self.unable_to_respond_aware = self.config.get("unable_to_respond_aware", True)
 
@@ -587,9 +592,12 @@ class QwenVQAEvaluator:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, required=True)
+    parser.add_argument("--finetuned", action="store_true")
     args = parser.parse_args()
     config_path = args.config_path
-    evaluator = QwenVQAEvaluator(config_path)
+    finetuned = args.finetuned
+
+    evaluator = QwenVQAEvaluator(config_path, finetuned)
     print("Starting QWEN 2.5 evaluator")
     evaluator.evaluate()
 
