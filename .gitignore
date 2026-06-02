@@ -1,4 +1,5 @@
 .venv/
+.claude
 
 commands.txt
 note.txt
@@ -14,18 +15,22 @@ put_images_script_for_verified.py
 corruption-scripts/results/
 data/
 data_standard_pipeline/
+VQA_analysis/evaluation_files
 needed_images_2/
 results_w2_UNABLE/
 results/
 finetuning/qwen25vl*
+result*/
 
 INFO.md
 CLAUDE.md
 
 slurm-*.out
 
-
-
+finetuning/qwen25*
+other_scripts/
+download_dataset.sh
+CLAUDE.md
 
 .DS_Store
 

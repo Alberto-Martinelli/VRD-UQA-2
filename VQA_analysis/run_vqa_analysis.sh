@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1 # one process
 #SBATCH --cpus-per-task=4 # 4 cores per process
 #SBATCH --mem=32G # RAM memory
-#SBATCH --time=0-23:59:00 # max wall time (D-HH:MM:SS)
+#SBATCH --time=0-16:00:00 # max wall time (D-HH:MM:SS)
 #SBATCH --partition=gpu_a40 # partition name
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-VQA_analysis-%j.out # output file name
@@ -21,32 +21,54 @@ export SCRATCH_FLASH="/mnt/beegfs/amartinelli"
 
 export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
 
-rm -rf $SCRATCH_FLASH/VQA_analysis
-# mkdir -p $SCRATCH_FLASH/VQA_analysis/
-rsync -av --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' $HOME/VRD-UQA/ $SCRATCH_FLASH/VQA_analysis/
-cd $SCRATCH_FLASH/VQA_analysis/
+WORK_DIR=$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}
+
+rm -rf $WORK_DIR
+# mkdir -p $WORK_DIR
+rsync -aq --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' --exclude='finetuning' $HOME/VRD-UQA/ $WORK_DIR/
+cd $WORK_DIR
 # rm -rf .venv/
 
 uv --version
 export UV_LINK_MODE=copy
-uv sync
-# ------ RUN THE QWEN EVALUATOR ------ 
-uv run python VQA_analysis/new_evaluators/qwen_evaluator.py --config_path VQA_analysis/config.json
+uv sync -qq
 
-# cp VQA_analysis/models/results/MPDocVQA/LLM/results_w2_UNABLE/original/Qwen_vqa_analysis_results.json $HOME/VRD-UQA/
+DATASET=$1
+ZS_CONFIG="VQA_analysis/config_zeroshot.json"
+FS_CONFIG="VQA_analysis/config_fewshot.json"
 
-# ------ RUN THE UNABLE CONVERTER ------
-uv run python VQA_analysis/pipeline/1_unable_converter.py
+# Patch dataset and input_file into the scratch copies (originals untouched)
+uv run python -c "
+import json, sys
+dataset = sys.argv[1]
+input_file = f'/home/amartinelli/VRD-UQA/VQA_analysis/evaluation_files/complete/{dataset}_unanswerable_corrupted_questions_just_false.json'
+for path in ['VQA_analysis/config_zeroshot.json', 'VQA_analysis/config_fewshot.json']:
+    cfg = json.load(open(path))
+    cfg['dataset'] = dataset
+    cfg['input_file'] = input_file
+    json.dump(cfg, open(path, 'w'), indent=4)
+" $DATASET
 
-# ------ RUN THE ADDING INFORMATIONS ------
-uv run python VQA_analysis/pipeline/2_adding_informations.py
+# ------ PASS 1: ZERO-SHOT ------
+# printf "\n\n=== QWEN2.5 — ZERO-SHOT ==="
+# uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $ZS_CONFIG
 
-# ------ RUN THE RESULT ANALYSIS ------
-uv run python VQA_analysis/pipeline/3_result_analysis.py --dataset MPDocVQA --images_path needed_images_2
+# ------ PASS 2: FEW-SHOT ------
+printf "\n\n=== QWEN2.5 — FEW-SHOT FINETUNED ==="
+uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned
+
+# ------ PASS 3: FINE-TUNING ------
+
+# Normalize + enrich once (auto-skips already-processed files)
+uv run python VQA_analysis/pipeline/1_normalize_unanswerable_responses.py
+uv run python VQA_analysis/pipeline/2_enrich_metadata.py
+
+# Metrics per condition
+uv run python VQA_analysis/pipeline/3_compute_metrics.py --config $FS_CONFIG
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 
-cp -r $SCRATCH_FLASH/VQA_analysis/VQA_analysis/models/results $HOME/VRD-UQA
+cp -r $WORK_DIR/VQA_analysis/models/results $HOME/VRD-UQA/results_${SLURM_JOB_ID}
 
 
 ELAPSED=$(( SECONDS - START_TIME ))
