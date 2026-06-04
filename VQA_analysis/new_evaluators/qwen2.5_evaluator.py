@@ -19,12 +19,13 @@ from tqdm.auto import tqdm
 
 
 class QwenVQAEvaluator:
-    def __init__(self, config_path, finetuned):
+    def __init__(self, config_path, finetuned, answerable=False):
         with open(config_path) as f:
             self.config = json.load(f)
 
         # Get Qwen-specific configuration - now nested under "llm"
         self.finetuned = finetuned
+        self.answerable = answerable
         if self.finetuned:
             self.model_config = self.config["open_source_models"]["qwen2.5_finetuned"]
         else:
@@ -330,6 +331,10 @@ class QwenVQAEvaluator:
             adapter_name = os.path.basename(adapter_path.rstrip("/"))
             processing_folder += f"_{adapter_name}"
 
+        # Answerable pass goes to its own folder so it never overwrites corrupted results
+        if self.answerable:
+            processing_folder += "_answerable"
+
         # Create output filename with model name
         output_filename = f"{self.model_config['name']}_vqa_analysis_results.json"
 
@@ -481,7 +486,7 @@ class QwenVQAEvaluator:
         if "vqa_results" not in item["verification_result"]:
             item["verification_result"]["vqa_results"] = []
 
-        question = item["corrupted_question"]
+        question = item["original_question"] if self.answerable else item["corrupted_question"]
         pages = item["layout_analysis"]["pages"]
 
         # Resolve raw page identifiers to absolute image paths
@@ -593,11 +598,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, required=True)
     parser.add_argument("--finetuned", action="store_true")
+    parser.add_argument("--answerable", action="store_true")
     args = parser.parse_args()
     config_path = args.config_path
     finetuned = args.finetuned
 
-    evaluator = QwenVQAEvaluator(config_path, finetuned)
+    evaluator = QwenVQAEvaluator(config_path, finetuned, answerable=args.answerable)
     print("Starting QWEN 2.5 evaluator")
     evaluator.evaluate()
 

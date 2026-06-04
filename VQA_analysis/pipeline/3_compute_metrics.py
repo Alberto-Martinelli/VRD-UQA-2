@@ -854,6 +854,36 @@ class VQAAnalyzer:
         return list(self._normalize_sliced(hit, cnt, hit_c1, cnt_c1, hit_c2, cnt_c2, hit_c3, cnt_c3))
 
 
+    def FRR(self):
+        # FRR = fraction of answerable questions where the model falsely refused.
+        # Computed identically to QUR() — interpretation differs by folder context.
+        correct = correct_c1 = correct_c2 = correct_c3 = 0
+        total = total_c1 = total_c2 = total_c3 = 0
+
+        for res in self.valid_results:
+            all_answers = self._get_answers(res)
+            complexity = res["complexity"]
+
+            total += 1
+            total_c1, total_c2, total_c3 = self._count_by_complexity(complexity, total_c1, total_c2, total_c3)
+
+            unable = sum(1 for a in all_answers if self._is_unable(a))
+            n = len(all_answers)
+
+            if n > 0 and unable == n:
+                correct += 1
+                correct_c1, correct_c2, correct_c3 = self._count_by_complexity(
+                    complexity, correct_c1, correct_c2, correct_c3
+                )
+
+        return [
+            correct / total if total else 0,
+            correct_c1 / total_c1 if total_c1 else 0,
+            correct_c2 / total_c2 if total_c2 else 0,
+            correct_c3 / total_c3 if total_c3 else 0,
+        ]
+
+
 def save_metric(folder, name, data, index, complexity_data=None):
     """Save one metric to CSV. If complexity_data is provided (list of 3 dicts),
     also saves _complexity_1/2/3 variants with the same index."""
@@ -947,6 +977,25 @@ def generate_analysis_report(dataset, images_path):
 
         folder_results = folder / "results"
         os.makedirs(folder_results, exist_ok=True)
+
+        # Answerable folders only need FRR — skip the full QUR/UR pipeline
+        if "_answerable" in folder.name:
+            frr_accum = {}
+            for result_file in (folder / "augmented").iterdir():
+                try:
+                    with open(result_file) as f:
+                        data = json.load(f)
+                    model_name = result_file.stem.split("_")[0]
+                    results = data.get("corrupted_questions", [])
+                    images_path_local = data.get("base_image_dir", images_path)
+                    analyzer = VQAAnalyzer(results, entity_verifier, dataset, images_path=images_path_local)
+                    v, v1, v2, v3 = analyzer.FRR()
+                    frr_accum[model_name] = [v, v1, v2, v3]
+                except Exception as e:
+                    print(f"Error processing {result_file}: {e}")
+            save_metric(folder_results, "FRR", frr_accum, ["FRR", "FRR_C1", "FRR_C2", "FRR_C3"])
+            print(f"FRR saved in {folder_results}")
+            continue
 
         # accum[metric_name][total|c1|c2|c3][model_name] = values
         accum = {

@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1 # one process
 #SBATCH --cpus-per-task=4 # 4 cores per process
 #SBATCH --mem=32G # RAM memory
-#SBATCH --time=0-16:00:00 # max wall time (D-HH:MM:SS)
+#SBATCH --time=0-4:00:00 # max wall time (D-HH:MM:SS)
 #SBATCH --partition=gpu_a40 # partition name
 #SBATCH --gres=gpu:1 # 1 GPU
 #SBATCH --output=slurm-VQA_analysis-%j.out # output file name
@@ -54,8 +54,12 @@ for path in ['VQA_analysis/config_zeroshot.json', 'VQA_analysis/config_fewshot.j
 # uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $ZS_CONFIG
 
 # ------ PASS 2: FEW-SHOT ------
-printf "\n\n=== QWEN2.5 — FEW-SHOT FINETUNED ==="
-uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned
+# printf "\n\n=== QWEN2.5 — FEW-SHOT FINETUNED ==="
+# uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned
+
+# ------ PASS 2b: FEW-SHOT FINETUNED — ANSWERABLE ------
+printf "\n\n=== QWEN2.5 — FEW-SHOT FINETUNED — ANSWERABLE ==="
+uv run python VQA_analysis/new_evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned --answerable
 
 # ------ PASS 3: FINE-TUNING ------
 
