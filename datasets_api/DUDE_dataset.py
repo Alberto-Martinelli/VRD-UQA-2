@@ -1,7 +1,10 @@
 from datasets import load_dataset
 from datasets_api.datasets_utils import save_sample
+import pandas as pd
+import os
+import logging
 
-DUDE_IMAGE_DIR = ""
+DUDE_IMAGE_DIR = '/mnt/beegfs/amartinelli/DUDE_images'
 
 def get_DUDE_image_dir():
     return DUDE_IMAGE_DIR
@@ -22,6 +25,7 @@ def sample_DUDE(dataset_split, num_questions: int, offset: int = 0, shuffle: boo
     
     output_wrapper = {
         "dataset_name": "DUDE",
+        "base_image_dir": get_DUDE_image_dir(),
         "data": sampled
     }
     return output_wrapper
@@ -36,13 +40,94 @@ def sample_DUDE_different_from(dataset_split, num_questions: int, exclude_questi
 
     output_wrapper = {
         "dataset_name": "DUDE",
+        "base_image_dir": get_DUDE_image_dir(),
         "data": sampled
     }
     return output_wrapper
+
+def standardize_DUDE_for_corruption_pipeline(data, split_type):
+    # Create DataFrame with same structure as MPDocVQA
+    df = pd.DataFrame(data["data"])
+
+    # Filter out questions with empty bounding boxes, empty answers, and train split
+    def check_bounding_boxes(x):
+        # Handle NaN or non-dictionary values
+        if not isinstance(x, dict):
+            return False
+        
+        # Check if 'left' exists and has at least one coordinate
+        # Use any key: "left", "top", "width", "height", or "page"
+        return "left" in x and len(x["left"]) > 0
+
+    def check_answers(x):
+        if isinstance(x, float):  # Handle NaN values
+            return False
+        return bool(x) and len(x) > 0
+
+    df = df[
+        (df["data_split"] == split_type)
+        & (df["answers_page_bounding_boxes"].apply(check_bounding_boxes))
+        & (df["answers"].apply(check_answers))
+    ]
+
+    base_image_dir = get_DUDE_image_dir()
+
+    # Get document pages using directory scanning
+    def get_document_pages(doc_id):
+        pages = []
+        if os.path.exists(base_image_dir):
+            for filename in os.listdir(base_image_dir):
+                # Look for any image file starting with doc_id (even without an underscore)
+                if filename.startswith(doc_id) and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    pages.append(filename)
+            pages.sort(key=lambda f: int(f.rsplit('_', 1)[-1].split('.')[0]))
+        else:
+            logging.error(f"Warning: base_image_dir does not exist at {base_image_dir}!")
+        return pages
+
+    # Create necessary columns
+    df["page_ids"] = df["docId"].apply(get_document_pages)
+    
+    # Warn if 0 page_ids are found
+    empty_docs = df[df["page_ids"].map(len) == 0]
+    if not empty_docs.empty:
+        logging.warning(f"Found {len(empty_docs)} documents with 0 page_ids in {base_image_dir}!")
+        if os.path.exists(base_image_dir):
+            sample_files = os.listdir(base_image_dir)[:10]
+            logging.warning(f"Sample files actually present in directory: {sample_files}")
+            logging.warning(f"We were looking for files starting with doc_id like: {df.iloc[0]['docId']}")
+    
+    df["document"] = df["page_ids"].apply(
+        lambda x: [
+            os.path.join(base_image_dir, pid)
+            for pid in x
+        ]
+    )
+    df["answer_page_idx"] = df["answers_page_bounding_boxes"].apply(
+        lambda x: x.get("page", [0])[0] if isinstance(x, dict) and x.get("page") else 0
+    )
+    df["questionId"] = df["questionId"].astype(str)
+
+    # Select and reorder columns
+    df = df[
+        [
+            "questionId",
+            "question",
+            "answers",
+            "answer_page_idx",
+            "data_split",
+            "docId",
+            "document",
+        ]
+    ]
+
+    data["data"] = df.to_dict(orient="records")
+    return data
 
 if __name__ == "__main__":
     split = "train"
     num_questions = 10
     dude_split = get_DUDE_split(split)
     sample_dude = sample_DUDE(dude_split, num_questions)
+    sample_dude = standardize_DUDE_for_corruption_pipeline(sample_dude, split)
     save_sample("DUDE", split, num_questions, sample_dude)

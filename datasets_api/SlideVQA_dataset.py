@@ -2,6 +2,7 @@ from datasets import load_dataset
 import os
 from tqdm import tqdm
 from datasets_api.datasets_utils import save_sample
+import pandas as pd
 
 SCRATCH_FLASH = '/mnt/beegfs/amartinelli/'
 IMAGES_PATH = 'SlideVQA_images/'
@@ -79,6 +80,7 @@ def sample_SlideVQA(dataset_split, num_questions: int, offset: int = 0, shuffle:
 
     output_wrapper = {
         "dataset_name": "SlideVQA",
+        "base_image_dir": get_SlideVQA_image_dir(),
         "data": processed_data
     }
     return output_wrapper
@@ -99,13 +101,61 @@ def sample_SlideVQA_different_from(dataset_split, num_questions: int, exclude_qu
 
     output_wrapper = {
         "dataset_name": "SlideVQA",
+        "base_image_dir": get_SlideVQA_image_dir(),
         "data": processed_data
     }
     return output_wrapper
+
+def standardize_SlideVQA_for_corruption_pipeline(data, split_type):
+    # Create DataFrame with same structure as MPDocVQA
+    df = pd.DataFrame(data["data"])
+
+    # For SlideVQA we provide in input absolute image paths, so no change is needed here
+
+    # Derive base_image_dir from the first document entry (absolute paths in train.json)
+    first_doc = df.iloc[0]["document"] if len(df) > 0 else None
+    first_page = first_doc[0] if isinstance(first_doc, list) and first_doc else (first_doc if isinstance(first_doc, str) else "")
+    base_image_dir = os.path.dirname(first_page) if first_page else ""
+
+    # Map the SlideVQA specific fields to the pipeline's expected column names
+    df["questionId"] = df["qa_id"].astype(str)
+    df["answers"] = df["answer"]
+    
+    # SlideVQA has answers_page_bounding_boxes.page which contains the index
+    # and evidence_pages which also contains it. We'll use the bounding box one for consistency.
+    df["answer_page_idx"] = df["answers_page_bounding_boxes"].apply(
+        lambda x: x.get("page", [0])[0] if isinstance(x, dict) and x.get("page") else 0
+    )
+
+    # Filter out questions with empty answers and correct data split
+    def check_answers(x):
+        if isinstance(x, float):  # Handle NaN values
+            return False
+        return bool(x) and len(x) > 0
+
+    df["data_split"] = split_type
+    df = df[
+        (df["answers"].apply(check_answers))
+    ]
+
+    # Select and reorder only the columns needed for the pipeline
+    df = df[
+        [
+            "questionId",
+            "question",
+            "answers",
+            "answer_page_idx",
+            "data_split",
+            "document",
+        ]
+    ]
+    data["data"] = df.to_dict(orient="records")
+    return data
 
 if __name__ == "__main__":
     split = "train"
     num_questions = 10
     slidevqa_split = get_SlideVQA_split(split)
     sample_slidevqa = sample_SlideVQA(slidevqa_split, num_questions)
+    sample_slidevqa = standardize_SlideVQA_for_corruption_pipeline(sample_slidevqa, split)
     save_sample("SlideVQA", split, num_questions, sample_slidevqa)

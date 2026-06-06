@@ -4,6 +4,7 @@ from tqdm import tqdm
 import json
 from langdetect import detect, LangDetectException
 from datasets_api.datasets_utils import save_sample
+import pandas as pd
 
 SCRATCH_FLASH = '/mnt/beegfs/amartinelli/'
 IMAGES_PATH = 'BDocs_images/'
@@ -89,6 +90,8 @@ def _flatten_documents(dataset_to_process, num_questions, image_dir, offset):
 
             flattened_data.append(entry)
 
+    return flattened_data
+
 def sample_BDocs(dataset_split, num_questions: int, offset: int = 0, shuffle: bool = True):
     if shuffle:
         dataset_to_process = dataset_split.shuffle(seed=42)
@@ -102,32 +105,79 @@ def sample_BDocs(dataset_split, num_questions: int, offset: int = 0, shuffle: bo
 
     output_wrapper = {
         "dataset_name": "Bounding Docs",
+        "base_image_dir": get_BDocs_image_dir(),
         "data": flattened_data
     }
     return output_wrapper
 
 def sample_BDocs_different_from(dataset_split, num_questions: int, exclude_questions: list[str], offset: int = 0, shuffle: bool = True):
-    exclude_set = set(exclude_questions)
-    filtered = dataset_split.filter(lambda item: item["question"] not in exclude_set)
-    if shuffle:
-        sampled_data = filtered.shuffle(seed=42).select(range(offset, min(offset + num_questions, len(filtered))))
-    else:
-        sampled_data = filtered.select(range(offset, min(offset + num_questions, len(filtered))))
-    
     image_dir = get_BDocs_image_dir()
     os.makedirs(image_dir, exist_ok=True)
 
-    flattened_data = _flatten_documents(sampled_data, num_questions, image_dir, offset)
+    if shuffle:
+        dataset_to_process = dataset_split.shuffle(seed=42)
+    else:
+        dataset_to_process = dataset_split
+
+    # BDocs is document-level — must flatten before filtering by question text
+    exclude_set = set(exclude_questions)
+    flattened_data = _flatten_documents(dataset_to_process, num_questions * 10, image_dir, 0)
+    filtered = [item for item in flattened_data if item["question"] not in exclude_set]
+    sampled = filtered[offset : offset + num_questions]
 
     output_wrapper = {
         "dataset_name": "Bounding Docs",
-        "data": flattened_data
+        "base_image_dir": get_BDocs_image_dir(),
+        "data": sampled
     }
     return output_wrapper
+
+def standardize_BDocs_for_corruption_pipeline(data, split_type):
+    df = pd.DataFrame(data["data"])
+
+    # For Bounding Docs we provide in input absolute image paths, so no change is needed here
+
+    # Derive base_image_dir from the first document entry (absolute paths in train.json)
+    first_doc = df.iloc[0]["document"] if len(df) > 0 else None
+    first_page = first_doc[0] if isinstance(first_doc, list) and first_doc else (first_doc if isinstance(first_doc, str) else "")
+    base_image_dir = os.path.dirname(first_page) if first_page else ""
+
+    df["questionId"] = df["question_id"].astype(str)
+    df["docId"] = df["doc_id"]
+    df["data_split"] = split_type
+    
+    df["answer_page_idx"] = df["answers"].apply(
+        lambda x: x[0].get("page", 0) if isinstance(x, list) and len(x) > 0 else 0
+    )
+    df["answers"] = df["answers"].apply(
+        lambda x: [ans.get("value", "") for ans in x] if isinstance(x, list) else []
+    )
+    
+    def check_answers(x):
+        if isinstance(x, float):
+            return False
+        return bool(x) and len(x) > 0
+
+    df = df[df["answers"].apply(check_answers)]
+    
+    df = df[
+        [
+            "questionId",
+            "question",
+            "answers",
+            "answer_page_idx",
+            "data_split",
+            "docId",
+            "document",
+        ]
+    ]
+    data["data"] = df.to_dict(orient="records")
+    return data
 
 if __name__ == "__main__":
     split = "train"
     num_questions = 10
     bdocs_split = get_BDocs_split(split)
     sample_bdocs = sample_BDocs(bdocs_split, num_questions)
+    sample_bdocs = standardize_BDocs_for_corruption_pipeline(sample_bdocs, split)
     save_sample("BDocs", split, num_questions, sample_bdocs)

@@ -1,5 +1,6 @@
-.venv/
 .claude
+.venv/
+.vscode
 
 commands.txt
 note.txt
@@ -14,7 +15,7 @@ put_images_script_for_verified.py
 
 corruption-scripts/results/
 data/
-data_standard_pipeline/
+data_new/
 VQA_analysis/evaluation_files
 needed_images_2/
 results_w2_UNABLE/
