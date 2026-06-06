@@ -9,6 +9,7 @@ next_steps/
 helper_scripts/
 other_scripts/
 download_dataset.sh
+artifacts/
 
 put_images_script.py
 put_images_script_for_verified.py
