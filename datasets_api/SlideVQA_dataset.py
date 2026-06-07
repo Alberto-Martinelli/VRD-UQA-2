@@ -2,13 +2,12 @@ from datasets import load_dataset
 import os
 from tqdm import tqdm
 from datasets_api.datasets_utils import save_sample
+from config import paths
 import pandas as pd
 
-SCRATCH_FLASH = '/mnt/beegfs/amartinelli/'
-IMAGES_PATH = 'SlideVQA_images/'
 
 def get_SlideVQA_image_dir():
-    return os.path.join(SCRATCH_FLASH, IMAGES_PATH)
+    return paths.image_dir("SlideVQA")
 
 def get_SlideVQA_split(split_type: str):
     print("Loading SlideVQA dataset from HuggingFace...")

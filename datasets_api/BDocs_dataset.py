@@ -4,13 +4,12 @@ from tqdm import tqdm
 import json
 from langdetect import detect, LangDetectException
 from datasets_api.datasets_utils import save_sample
+from config import paths
 import pandas as pd
 
-SCRATCH_FLASH = '/mnt/beegfs/amartinelli/'
-IMAGES_PATH = 'BDocs_images/'
 
 def get_BDocs_image_dir():
-    return os.path.join(SCRATCH_FLASH, IMAGES_PATH)
+    return paths.image_dir("BDocs")
 
 def get_BDocs_split(split_type: str):
     # HuggingFace uses "validation" but internally we use "val" to match all other datasets
