@@ -5,4 +5,3 @@
 export SCRATCH_FLASH="${SCRATCH_FLASH:-/mnt/beegfs/amartinelli}"
 export MPDOCVQA_SOURCE_QAS="${MPDOCVQA_SOURCE_QAS:-/home/amartinelli/MPDocVQA/MPDocVQA_complete/qas}"
 export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
-export VRD_UQA_HOME="${VRD_UQA_HOME:-$HOME/VRD-UQA}"   # persistent repo, used as rsync source

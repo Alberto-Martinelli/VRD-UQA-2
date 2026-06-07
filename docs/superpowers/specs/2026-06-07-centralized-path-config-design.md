@@ -54,8 +54,13 @@ Canonical roots for bash. Sourced by every SLURM script. The `${VAR:-default}` f
 export SCRATCH_FLASH="${SCRATCH_FLASH:-/mnt/beegfs/amartinelli}"
 export MPDOCVQA_SOURCE_QAS="${MPDOCVQA_SOURCE_QAS:-/home/amartinelli/MPDocVQA/MPDocVQA_complete/qas}"
 export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
-export VRD_UQA_HOME="${VRD_UQA_HOME:-$HOME/VRD-UQA}"   # persistent repo, used as rsync source
 ```
+
+> Note: an earlier draft also exported `VRD_UQA_HOME` as the rsync-source root, but
+> the SLURM scripts' bootstrap `source "$HOME/VRD-UQA/scripts/env.sh"` line must use the
+> literal `$HOME` path (chicken-and-egg), so a `VRD_UQA_HOME` var would only ever be
+> partially adopted. It was dropped to avoid a dead, misleading export; scripts use
+> `$HOME/VRD-UQA` uniformly.
 
 ### New file: `config/paths.py`
 
