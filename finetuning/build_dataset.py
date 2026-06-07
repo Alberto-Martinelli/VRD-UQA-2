@@ -9,8 +9,7 @@ from datasets_api.BDocs_dataset import get_BDocs_split, sample_BDocs_different_f
 from datasets_api.DUDE_dataset import get_DUDE_split, sample_DUDE_different_from, standardize_DUDE_for_corruption_pipeline
 from datasets_api.MPDocVQA_dataset import get_MPDocVQA_split, sample_MPDocVQA_different_from, standardize_MPDocVQA_for_corruption_pipeline
 from datasets_api.SlideVQA_dataset import get_SlideVQA_split, sample_SlideVQA_different_from, standardize_SlideVQA_for_corruption_pipeline
-
-REPO_ROOT = Path("/home/amartinelli/VRD-UQA")
+from config.paths import REPO_ROOT
 
 TRAIN_SOURCES = {
     "MPDocVQA": REPO_ROOT / "data/MPDocVQA/MPDocVQA_train_750/MPDocVQA_unanswerable_corrupted_questions_just_false.json",
