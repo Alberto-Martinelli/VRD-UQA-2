@@ -1,6 +1,5 @@
 import os
 from datasets import load_dataset
-from tqdm import tqdm
 import json
 from langdetect import detect, LangDetectException
 from datasets_api.datasets_utils import save_sample
@@ -14,16 +13,23 @@ def get_BDocs_image_dir():
 def get_BDocs_split(split_type: str):
     # HuggingFace uses "validation" but internally we use "val" to match all other datasets
     hf_split = "validation" if split_type == "val" else split_type
+    print(f"[BDocs] Loading '{hf_split}' split from HuggingFace (letxbe/BoundingDocs)...", flush=True)
     dataset_split = load_dataset("letxbe/BoundingDocs", split=hf_split, trust_remote_code=True)
+    print(f"[BDocs] Loaded {len(dataset_split)} raw documents.", flush=True)
     return dataset_split
 
 def _flatten_documents(dataset_to_process, num_questions, image_dir, offset):
+    print(f"[BDocs] Flattening documents to collect up to {num_questions} English questions...", flush=True)
     flattened_data = []
     skipped_count = 0
+    docs_seen = 0
 
-    for doc in tqdm(dataset_to_process, desc="Flattening Documents"):
+    for doc in dataset_to_process:
         if len(flattened_data) >= num_questions:
             break
+        docs_seen += 1
+        if docs_seen % 100 == 0:
+            print(f"[BDocs]   scanned {docs_seen} docs -> {len(flattened_data)}/{num_questions} questions", flush=True)
         doc_id = doc['doc_id']
         
         # --- Step A: Save images and store absolute paths ---
@@ -89,6 +95,7 @@ def _flatten_documents(dataset_to_process, num_questions, image_dir, offset):
 
             flattened_data.append(entry)
 
+    print(f"[BDocs] Collected {len(flattened_data)} questions from {docs_seen} documents.", flush=True)
     return flattened_data
 
 def sample_BDocs(dataset_split, num_questions: int, offset: int = 0, shuffle: bool = True):
@@ -123,6 +130,8 @@ def sample_BDocs_different_from(dataset_split, num_questions: int, exclude_quest
     flattened_data = _flatten_documents(dataset_to_process, num_questions * 10, image_dir, 0)
     filtered = [item for item in flattened_data if item["question"] not in exclude_set]
     sampled = filtered[offset : offset + num_questions]
+    print(f"[BDocs] {len(filtered)} questions after excluding {len(exclude_set)} originals; "
+          f"keeping {len(sampled)}.", flush=True)
 
     output_wrapper = {
         "dataset_name": "Bounding Docs",

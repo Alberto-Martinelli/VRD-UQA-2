@@ -1,6 +1,5 @@
 from datasets import load_dataset
 import os
-from tqdm import tqdm
 from datasets_api.datasets_utils import save_sample
 from config import paths
 import pandas as pd
@@ -10,17 +9,19 @@ def get_SlideVQA_image_dir():
     return paths.image_dir("SlideVQA")
 
 def get_SlideVQA_split(split_type: str):
-    print("Loading SlideVQA dataset from HuggingFace...")
+    print(f"[SlideVQA] Loading '{split_type}' split from HuggingFace (NTT-hil-insight/SlideVQA)...", flush=True)
     dataset_split = load_dataset("NTT-hil-insight/SlideVQA", split=split_type, trust_remote_code=True)
+    print(f"[SlideVQA] Loaded {len(dataset_split)} raw questions.", flush=True)
     return dataset_split
 
 def _process_samples(sampled_data, image_dir):
-    print(f"Processing {len(sampled_data)} questions and extracting images...")
+    total = len(sampled_data)
+    print(f"[SlideVQA] Extracting images for {total} questions...", flush=True)
     processed_data = []
     # Track processed decks to avoid redundant image saving
     processed_decks = set()
 
-    for sample in tqdm(sampled_data):
+    for i, sample in enumerate(sampled_data, 1):
         # ["page_3", "page_1", "page_10", "page_2"] -> ["page_1", "page_2", "page_3", "page_10"]
         page_keys = sorted(
             [k for k in sample.keys() if k.startswith('page_')], 
@@ -63,6 +64,12 @@ def _process_samples(sampled_data, image_dir):
             }
         
         processed_data.append(record)
+
+        if i % 100 == 0 or i == total:
+            print(f"[SlideVQA]   processed {i}/{total} questions "
+                  f"({len(processed_decks)} unique decks so far)", flush=True)
+
+    print(f"[SlideVQA] Done: {len(processed_data)} questions across {len(processed_decks)} decks.", flush=True)
     return processed_data
 
 def sample_SlideVQA(dataset_split, num_questions: int, offset: int = 0, shuffle: bool = True):
@@ -86,7 +93,10 @@ def sample_SlideVQA(dataset_split, num_questions: int, offset: int = 0, shuffle:
 
 def sample_SlideVQA_different_from(dataset_split, num_questions: int, exclude_questions: list[str], offset: int = 0, shuffle: bool = True):
     exclude_set = set(exclude_questions)
+    print(f"[SlideVQA] Filtering out {len(exclude_set)} excluded questions "
+          f"(this can take several minutes for image datasets)...", flush=True)
     filtered = dataset_split.filter(lambda item: item["question"] not in exclude_set)
+    print(f"[SlideVQA] {len(filtered)} questions remain after exclusion; sampling up to {num_questions}.", flush=True)
     if shuffle:
         sampled_data = filtered.shuffle(seed=42).select(range(offset, min(offset + num_questions, len(filtered))))
     else:

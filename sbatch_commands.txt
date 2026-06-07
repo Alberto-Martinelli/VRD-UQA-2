@@ -12,3 +12,5 @@ sbatch VRD-UQA/VQA_analysis/run_vqa_analysis.sh BDocs
 sbatch VRD-UQA/VQA_analysis/run_vqa_analysis.sh DUDE
 sbatch VRD-UQA/VQA_analysis/run_vqa_analysis.sh MPDocVQA
 sbatch VRD-UQA/VQA_analysis/run_vqa_analysis.sh SlideVQA
+
+sbatch scripts/slurm/build_dataset.sh

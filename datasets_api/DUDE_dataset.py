@@ -10,11 +10,9 @@ def get_DUDE_image_dir():
     return paths.image_dir("DUDE")
 
 def get_DUDE_split(split_type: str):
+    print(f"[DUDE] Loading '{split_type}' split from HuggingFace (jordyvl/DUDE_loader)...", flush=True)
     dataset_split = load_dataset("jordyvl/DUDE_loader", split=split_type, trust_remote_code=True)
-
-    print("First example:\n", dataset_split[0])
-    print("\nColumn names:\n", dataset_split.column_names)
-    print("\nDataset length:\n", len(dataset_split))
+    print(f"[DUDE] Loaded {len(dataset_split)} raw entries.", flush=True)
     return dataset_split
 
 def sample_DUDE(dataset_split, num_questions: int, offset: int = 0, shuffle: bool = True):
@@ -33,6 +31,8 @@ def sample_DUDE(dataset_split, num_questions: int, offset: int = 0, shuffle: boo
 def sample_DUDE_different_from(dataset_split, num_questions: int, exclude_questions: list[str], offset: int = 0, shuffle: bool = True):
     exclude_set = set(exclude_questions)
     filtered = dataset_split.filter(lambda item: item["question"] not in exclude_set)
+    print(f"[DUDE] {len(filtered)} entries after excluding {len(exclude_set)} originals; "
+          f"sampling up to {num_questions}.", flush=True)
     if shuffle:
         sampled = filtered.shuffle(seed=42).select(range(offset, min(offset + num_questions, len(filtered))))
     else:
@@ -45,7 +45,7 @@ def sample_DUDE_different_from(dataset_split, num_questions: int, exclude_questi
     }
     return output_wrapper
 
-def standardize_DUDE_for_corruption_pipeline(data, split_type):
+def standardize_DUDE_for_corruption_pipeline(data, split_type, require_bbox: bool = True):
     # Create DataFrame with same structure as MPDocVQA
     df = pd.DataFrame(data["data"])
 
@@ -54,7 +54,7 @@ def standardize_DUDE_for_corruption_pipeline(data, split_type):
         # Handle NaN or non-dictionary values
         if not isinstance(x, dict):
             return False
-        
+
         # Check if 'left' exists and has at least one coordinate
         # Use any key: "left", "top", "width", "height", or "page"
         return "left" in x and len(x["left"]) > 0
@@ -64,11 +64,12 @@ def standardize_DUDE_for_corruption_pipeline(data, split_type):
             return False
         return bool(x) and len(x) > 0
 
-    df = df[
-        (df["data_split"] == split_type)
-        & (df["answers_page_bounding_boxes"].apply(check_bounding_boxes))
-        & (df["answers"].apply(check_answers))
-    ]
+    # The corruption pipeline needs bounding boxes, but clean (gold) SFT examples
+    # do not — pass require_bbox=False there to avoid dropping ~55% of DUDE.
+    mask = (df["data_split"] == split_type) & (df["answers"].apply(check_answers))
+    if require_bbox:
+        mask &= df["answers_page_bounding_boxes"].apply(check_bounding_boxes)
+    df = df[mask]
 
     base_image_dir = get_DUDE_image_dir()
 
@@ -121,6 +122,9 @@ def standardize_DUDE_for_corruption_pipeline(data, split_type):
         ]
     ]
 
+    _filt = "non-empty answers" + (" + bbox" if require_bbox else "")
+    print(f"[DUDE] {len(df)} entries survive standardization "
+          f"(data_split=='{split_type}' + {_filt}).", flush=True)
     data["data"] = df.to_dict(orient="records")
     return data
 

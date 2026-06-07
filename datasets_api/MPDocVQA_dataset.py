@@ -14,7 +14,7 @@ def get_MPDocVQA_split(split_type: str, shuffle: bool = True):
     with open(source) as f:
         full = json.load(f)
 
-    print(f"Total questions in {split_type} split: {len(full['data'])}")
+    print(f"[MPDocVQA] Loaded {len(full['data'])} questions from {split_type}.json", flush=True)
 
     if shuffle:
         # Shuffle in-place
@@ -37,7 +37,9 @@ def sample_MPDocVQA_different_from(mpdocvqa_full_data, num_questions: int, exclu
     exclude_set = set(exclude_questions)
     filtered = [item for item in mpdocvqa_full_data if item["question"] not in exclude_set]
     sampled = filtered[offset : min(offset + num_questions, len(filtered))]
-    
+    print(f"[MPDocVQA] {len(filtered)} questions after excluding {len(exclude_set)} originals; "
+          f"keeping {len(sampled)}.", flush=True)
+
     output_wrapper = {
         "dataset_name": "MPDocVQA",
         "base_image_dir": get_MPDocVQA_image_dir(),
