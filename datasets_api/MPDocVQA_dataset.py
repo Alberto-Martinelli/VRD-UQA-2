@@ -2,16 +2,15 @@ import os
 import json
 import random
 from datasets_api.datasets_utils import save_sample
+from config import paths
 import pandas as pd
 
-SOURCE_DIR = "/home/amartinelli/MPDocVQA/MPDocVQA_complete/qas"
-MPDOCVQA_IMAGE_DIR = '/mnt/beegfs/amartinelli/MPDocVQA_images'
 
 def get_MPDocVQA_image_dir():
-    return MPDOCVQA_IMAGE_DIR
+    return paths.image_dir("MPDocVQA")
 
 def get_MPDocVQA_split(split_type: str, shuffle: bool = True):
-    source = os.path.join(SOURCE_DIR, f"{split_type}.json")
+    source = os.path.join(str(paths.MPDOCVQA_SOURCE_QAS), f"{split_type}.json")
     with open(source) as f:
         full = json.load(f)
 
