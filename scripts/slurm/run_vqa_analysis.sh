@@ -17,9 +17,7 @@ module purge
 module load miniconda3/3.13.25
 module load nvhpc/25.1
 
-export SCRATCH_FLASH="/mnt/beegfs/amartinelli"
-
-export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
+source "$HOME/VRD-UQA/scripts/env.sh"
 
 WORK_DIR=$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}
 

@@ -35,6 +35,8 @@ echo "--- Modules ---"
 module purge
 module load miniconda3/3.13.25
 module load nvhpc/25.1
+
+source "$HOME/VRD-UQA/scripts/env.sh"
 check "miniconda3 loaded"  python3 --version
 check "nvhpc loaded"       nvcc --version
 
@@ -55,7 +57,6 @@ echo "      torch device: $cuda_dev"
 # --- Scratch storage ---
 echo ""
 echo "--- Scratch Flash ---"
-export SCRATCH_FLASH="/mnt/beegfs-compat/amartinelli"
 check "scratch_flash dir exists" test -d "$SCRATCH_FLASH"
 
 tmpfile="$SCRATCH_FLASH/.hpc_test_$$"
@@ -82,7 +83,6 @@ rm -rf "$tmpenv" "$UV_CACHE_DIR"
 # --- HuggingFace cache dir ---
 echo ""
 echo "--- HuggingFace ---"
-export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
 mkdir -p "$HF_HOME"
 check "HF_HOME writable" test -w "$HF_HOME"
 echo "      HF_HOME: $HF_HOME"

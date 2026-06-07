@@ -14,6 +14,8 @@ module purge
 module load miniconda3/3.13.25
 module load nvhpc/25.1
 
+source "$HOME/VRD-UQA/scripts/env.sh"
+
 rm -rf $SCRATCH_FLASH/first_sample_test/
 mkdir -p $SCRATCH_FLASH/first_sample_test/
 cp -r $HOME/VRD-UQA $SCRATCH_FLASH/first_sample_test
