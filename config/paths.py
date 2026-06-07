@@ -3,8 +3,8 @@
 Mirrors scripts/env.sh: the default literals below MUST match env.sh.
 Environment variables (exported by env.sh) take precedence at runtime.
 """
-from pathlib import Path
 import os
+from pathlib import Path
 
 # Self-locating: correct whether the repo runs from $HOME or a relocated SLURM
 # work-dir. config/paths.py -> parent is config/, parent.parent is the repo root.

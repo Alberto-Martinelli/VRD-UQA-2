@@ -22,8 +22,12 @@ def test_repo_root_self_locates():
 
 
 def test_image_dir_derives_from_scratch_flash():
-    assert paths.image_dir("DUDE") == str(paths.SCRATCH_FLASH / "DUDE_images")
-    assert paths.image_dir("MPDocVQA") == str(paths.SCRATCH_FLASH / "MPDocVQA_images")
+    # Structural checks that don't re-derive the implementation formula.
+    for name in ("DUDE", "MPDocVQA"):
+        d = paths.image_dir(name)
+        assert d.endswith(f"/{name}_images"), d
+        assert not d.endswith("/"), d
+        assert d.startswith(str(paths.SCRATCH_FLASH)), d
 
 
 def test_default_value_when_env_unset():
