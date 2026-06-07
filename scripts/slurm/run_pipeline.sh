@@ -39,7 +39,7 @@ export HF_HOME="$SCRATCH_FLASH/.cache/huggingface"
 WORK_DIR="$SCRATCH_FLASH/${DATASET}_${SPLIT}_${N}"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
-rsync -a --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' \
+rsync -aq --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' \
     --exclude='data/DUDE' --exclude='data/BDocs' --exclude='data/SlideVQA' --exclude='data/MPDocVQA' \
     "$HOME/VRD-UQA/" "$WORK_DIR/"
 
@@ -61,7 +61,7 @@ uv --version
 export UV_LINK_MODE=copy
 export UV_CACHE_DIR=/tmp/uv_cache_$SLURM_JOB_ID
 uv venv --python python3
-uv sync
+uv sync -qq
 
 # # ------ CORRUPTION PIPELINE ------
 # uv run corruption-scripts/corruption/main.py --config "$CONFIG"
