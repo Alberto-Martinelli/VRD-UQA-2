@@ -1,13 +1,13 @@
 from datasets import load_dataset
 from datasets_api.datasets_utils import save_sample
+from config import paths
 import pandas as pd
 import os
 import logging
 
-DUDE_IMAGE_DIR = '/mnt/beegfs/amartinelli/DUDE_images'
 
 def get_DUDE_image_dir():
-    return DUDE_IMAGE_DIR
+    return paths.image_dir("DUDE")
 
 def get_DUDE_split(split_type: str):
     dataset_split = load_dataset("jordyvl/DUDE_loader", split=split_type, trust_remote_code=True)
