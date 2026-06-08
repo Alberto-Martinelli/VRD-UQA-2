@@ -17,6 +17,8 @@ from difflib import SequenceMatcher
 from qwen_vl_utils import process_vision_info
 from tqdm.auto import tqdm
 
+from config.paths import REPO_ROOT
+
 
 class QwenVQAEvaluator:
     def __init__(self, config_path, finetuned, answerable=False):
@@ -300,10 +302,9 @@ class QwenVQAEvaluator:
             }
 
     def _save_results(self, data):
-        # Construct base path
+        # Construct base path (outputs live under artifacts/evaluation, read by the metrics pipeline)
         base_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "models", "results", self.config["dataset"], "LLM"
+            str(REPO_ROOT), "artifacts", "evaluation", self.config["dataset"], "LLM"
         )
 
         # Get window size from config

@@ -16,6 +16,7 @@ import pandas as pd
 import os
 import torch
 from PIL import Image
+from config.paths import REPO_ROOT
 
 ENTITY_TYPES = [
     # Numerical Corruption
@@ -954,7 +955,7 @@ def _collect_metrics_into_accum(accum, model_name, metrics):
 
 def generate_analysis_report(dataset, images_path):
     entity_verifier = None  # EntityIdentifier(ENTITY_TYPES) — disabled, no external NER needed
-    base_path = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
+    base_path = REPO_ROOT / "artifacts" / "evaluation"
     dataset_path = base_path / dataset
     # print(f"Base path: {base_path}")
 

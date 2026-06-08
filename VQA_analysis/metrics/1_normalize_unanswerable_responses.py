@@ -12,6 +12,7 @@ from pathlib import Path
 from tqdm import tqdm
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from config.paths import REPO_ROOT
 
 # import google.generativeai as genai
 # from google import genai
@@ -182,9 +183,8 @@ def process_all_folders():
     Processes all JSON files in the results directory and its subdirectories.
     Skips files that have already been converted.
     """
-    # Results are written by the evaluators under VQA_analysis/models/results/,
-    # which is relative to the project root (two levels above this file).
-    results_dir = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
+    # Results are written by the evaluators under artifacts/evaluation/ (REPO_ROOT-relative).
+    results_dir = REPO_ROOT / "artifacts" / "evaluation"
 
     print("\n\n")
     print(f"{'='*100}")

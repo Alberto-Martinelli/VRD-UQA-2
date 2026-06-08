@@ -2,6 +2,7 @@ import json
 import time
 import os
 from pathlib import Path
+from config.paths import REPO_ROOT
 
 
 # max_tokens = 1024
@@ -247,7 +248,7 @@ def process_all_folders():
     Files in an "original" folder are processed and the output is written into a sibling folder "converted".
     Files that have already been converted are skipped.
     """
-    results_dir = Path(__file__).parent.parent.parent / "VQA_analysis" / "models" / "results"
+    results_dir = REPO_ROOT / "artifacts" / "evaluation"
 
     print("\n\n")
     print(f"{'='*100}")
