@@ -8,9 +8,9 @@ sbatch --job-name=DUDE     VRD-UQA/run_pipeline.sh DUDE     val 300
 sbatch --job-name=SlideVQA VRD-UQA/run_pipeline.sh SlideVQA val 300
 sbatch --job-name=BDocs    VRD-UQA/run_pipeline.sh BDocs    val 300
 
-sbatch run_vqa_analysis.sh                    # all 4 datasets, full eval (val_300)
-sbatch run_vqa_analysis.sh val_5              # all 4 datasets, smoke test (val_5)
-sbatch run_vqa_analysis.sh val_300 DUDE BDocs # specific datasets, full eval
+sbatch scripts/slurm/run_vqa_analysis.sh                    # all 4 datasets, full eval (val_300)
+sbatch scripts/slurm/run_vqa_analysis.sh val_5              # all 4 datasets, smoke test (val_5)
+sbatch scripts/slurm/run_vqa_analysis.sh val_300 DUDE BDocs # specific datasets, full eval
 
 
 sbatch scripts/slurm/build_dataset.sh

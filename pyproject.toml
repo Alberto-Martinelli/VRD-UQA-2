@@ -31,6 +31,17 @@ dependencies = [
     "verovio>=6.0.1",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Install the repo's own packages (editable via `uv sync`) so `config` and
+# `datasets_api` import from anywhere — SLURM by-path scripts, -m, notebooks —
+# without PYTHONPATH or sys.path hacks. `finetuning`/`VQA_analysis` are run by
+# path, not imported as packages, so they are intentionally not listed.
+[tool.hatch.build.targets.wheel]
+packages = ["config", "datasets_api"]
+
 [[tool.uv.index]]
 name = "pytorch-gpu"
 url = "https://download.pytorch.org/whl/cu124"

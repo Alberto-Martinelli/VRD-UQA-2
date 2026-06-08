@@ -32,7 +32,6 @@ export UV_LINK_MODE=copy
 export UV_CACHE_DIR=/tmp/uv_cache_$SLURM_JOB_ID
 uv sync -qq
 
-export PYTHONPATH="$HOME/VRD-UQA"
 uv run python finetuning/build_dataset.py
 
 mv "$HOME"/slurm* "$HOME/VRD-UQA/" 2>/dev/null || true
