@@ -157,9 +157,9 @@ class QwenVQAEvaluator:
             # Navigate through the nested structure correctly
             page_layout = pages[page_id]["layout_analysis"]
             page_ocr = self.get_sorted_ocr_text(page_layout)
+            image_filename = os.path.basename(page_id)
             if page_ocr:
                 # Use the full path as the key since that's what we use in generate_answer
-                image_filename = os.path.basename(page_id)
                 image_path = os.path.join(
                     self.images_base_path, image_filename
                 )
