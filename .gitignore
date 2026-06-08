@@ -20,7 +20,6 @@ VQA_analysis/evaluation_files
 needed_images_2/
 results_w2_UNABLE/
 results/
-finetuning/qwen25vl*
 result*/
 
 INFO.md
@@ -28,7 +27,6 @@ CLAUDE.md
 
 slurm-*.out
 
-finetuning/qwen25*
 other_scripts/
 CLAUDE.md
 

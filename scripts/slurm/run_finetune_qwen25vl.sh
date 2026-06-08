@@ -3,8 +3,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=0-12:00:00
-#SBATCH --partition=gpu_a100
+#SBATCH --time=0-16:00:00
+#SBATCH --partition=gpu_a40
 #SBATCH --gres=gpu:1
 #SBATCH --output=slurm-finetune-%j.out
 
@@ -24,7 +24,7 @@ VENV_DIR="$WORK_DIR/.venv"
 mkdir -p "$WORK_DIR"
 
 # ---- Sync repo (for finetuning configs & train.json) ----
-rsync -av \
+rsync -aq \
   --exclude='.git' --exclude='.venv' \
   --exclude='data' --exclude='data_standard_pipeline' \
   --exclude='corruption-scripts/results' \
@@ -63,5 +63,19 @@ cat "$CONFIG"
 
 llamafactory-cli train "$CONFIG"
 
+# ---- Copy trained adapter + training artifacts back to the repo ----
+# Read output_dir straight from the config so the two never drift.
+OUTPUT_DIR="$(sed -nE 's/^output_dir:[[:space:]]*//p' "$CONFIG" | tr -d "\"'")"
+DEST="$HOME/VRD-UQA/artifacts/finetuning/qwen25vl_lora_sft"
+if [ -n "$OUTPUT_DIR" ] && [ -d "$OUTPUT_DIR" ]; then
+    mkdir -p "$DEST"
+    # Bring back the final adapter, tokenizer, metrics and loss plot — but skip
+    # the intermediate checkpoint-* dirs (large, reproducible from the final state).
+    rsync -av --exclude='checkpoint-*' "$OUTPUT_DIR/" "$DEST/"
+    echo "Copied trained adapter -> $DEST"
+else
+    echo "WARNING: output_dir '$OUTPUT_DIR' not found; nothing copied back." >&2
+fi
+
 # ---- Move slurm log back ----
-mv $HOME/slurm-finetune-*.out $HOME/VRD-UQA
+mv "$HOME"/slurm-finetune-*.out "$HOME/VRD-UQA/" 2>/dev/null || true
