@@ -88,11 +88,18 @@ done
 
 mv $HOME/slurm* $HOME/VRD-UQA/
 
-# Copy results back under a human-readable, sortable name (split + timestamp)
+# Copy results back under a human-readable, sortable name (split + timestamp).
+# Only the datasets evaluated in THIS run, so the snapshot stays clean.
 RUN_NAME="eval_${SPLIT}_$(date +%Y%m%d_%H%M%S)"
 DEST="$HOME/VRD-UQA/artifacts/evaluation_runs/$RUN_NAME"
-mkdir -p "$(dirname "$DEST")"
-cp -r "$WORK_DIR/artifacts/evaluation" "$DEST"
+mkdir -p "$DEST"
+for D in "${DATASETS[@]}"; do
+    if [ -d "$WORK_DIR/artifacts/evaluation/$D" ]; then
+        cp -r "$WORK_DIR/artifacts/evaluation/$D" "$DEST/$D"
+    else
+        echo "WARNING: no results produced for $D (skipping in copy-back)"
+    fi
+done
 echo "Results copied to $DEST"
 
 

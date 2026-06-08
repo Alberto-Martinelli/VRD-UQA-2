@@ -2,6 +2,8 @@ import json
 import time
 import os
 from pathlib import Path
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # repo root on sys.path: run by path, not as a module
 from config.paths import REPO_ROOT
 
 
