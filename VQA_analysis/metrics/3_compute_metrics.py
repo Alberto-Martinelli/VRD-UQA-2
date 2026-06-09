@@ -10,6 +10,7 @@ from pathlib import Path
 from collections import Counter
 import math
 import re  # Added for window size extraction
+import traceback
 # from anls_star import anls_score
 # from gliner import GLiNER
 import pandas as pd
@@ -237,7 +238,8 @@ class VQAAnalyzer:
         self.dataset = dataset
         self.images_path = images_path
         self.side = side
-        # Pre-filter once so every metric method iterates only valid corrupted results.
+        # Pre-filter for structurally valid corruption records; metric methods then
+        # read the chosen answer side (corrupted or clean) via self._get_answers.
         self.valid_results = [
             r for r in results
             if r.get("is_corrupted")
@@ -920,6 +922,14 @@ def _save_qur_suite(az, metrics_dir, model_name):
     inpage, ip1, ip2, ip3, outpage, op1, op2, op3 = m["UR_PAGE"]
     save_metric(metrics_dir, "UR_PAGE_inpage",  {model_name: [inpage, ip1, ip2, ip3]}, ["UR_inpage", "UR_inpage_C1", "UR_inpage_C2", "UR_inpage_C3"])
     save_metric(metrics_dir, "UR_PAGE_outpage", {model_name: [outpage, op1, op2, op3]}, ["UR_outpage", "UR_outpage_C1", "UR_outpage_C2", "UR_outpage_C3"])
+    return m
+
+
+def _summary_rows(ds_name, slug, label, model_name, metric, vals):
+    """Build tidy long-format rows (overall/C1/C2/C3) for summary.csv."""
+    return [{"dataset": ds_name, "config": slug, "label": label, "model": model_name,
+             "metric": metric, "complexity": comp, "value": v}
+            for comp, v in zip(["overall", "C1", "C2", "C3"], vals)]
 
 
 def generate_analysis_report(run_id=None, dataset=None, images_path=None):
@@ -929,6 +939,7 @@ def generate_analysis_report(run_id=None, dataset=None, images_path=None):
         print(f"ERROR: run directory does not exist: {root}")
         return
 
+    # Exclude the `latest` symlink in case the root ever points at EVAL_RUNS_DIR itself.
     dataset_dirs = [root / dataset] if dataset else [p for p in root.iterdir() if p.is_dir() and p.name != "latest"]
 
     for dataset_dir in dataset_dirs:
@@ -961,26 +972,19 @@ def generate_analysis_report(run_id=None, dataset=None, images_path=None):
 
                 if questions in ("both", "corrupted"):
                     az = VQAAnalyzer(results, entity_verifier, ds_name, images_path=images_path_local, side="corrupted")
-                    _save_qur_suite(az, metrics_dir, model_name)
-                    qur = az.QUR()
-                    ur = az.UR()
-                    for tag, vals in [("QUR", qur[:4]), ("UR", ur[:4])]:
-                        for comp, v in zip(["overall", "C1", "C2", "C3"], vals):
-                            summary_rows.append({"dataset": ds_name, "config": slug, "label": label,
-                                                 "model": model_name, "metric": tag, "complexity": comp, "value": v})
+                    m = _save_qur_suite(az, metrics_dir, model_name)
+                    summary_rows += _summary_rows(ds_name, slug, label, model_name, "QUR", m["QUR"][:4])
+                    summary_rows += _summary_rows(ds_name, slug, label, model_name, "UR", m["UR"][:4])
 
                 if questions in ("both", "clean"):
                     az_c = VQAAnalyzer(results, entity_verifier, ds_name, images_path=images_path_local, side="clean")
                     frr = az_c.FRR()
                     save_metric(metrics_dir, "FRR", {model_name: frr}, ["FRR", "FRR_C1", "FRR_C2", "FRR_C3"])
-                    for comp, v in zip(["overall", "C1", "C2", "C3"], frr):
-                        summary_rows.append({"dataset": ds_name, "config": slug, "label": label,
-                                             "model": model_name, "metric": "FRR", "complexity": comp, "value": v})
+                    summary_rows += _summary_rows(ds_name, slug, label, model_name, "FRR", frr)
 
                 rl.append_summary_rows(manifest["run_id"], summary_rows)
                 print(f"metrics written to {metrics_dir}")
             except Exception as e:
-                import traceback
                 print(f"ERROR processing leaf {leaf}: {e}")
                 print(traceback.format_exc())
 
