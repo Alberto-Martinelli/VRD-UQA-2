@@ -232,18 +232,24 @@ def _enrich_data(data):
         question["question_entities"] = cleaned_entities
 
 
-
 def enrich_file(path):
-    """Enrich a normalized.json in place. No-op if already enriched."""
+    """Enrich a normalized.json in place. No-op if already enriched.
+    Returns True if it enriched the file, False if it was already done.
+
+    The data is mutated in memory but only written together with the
+    _enriched flag, so a crash before the write leaves the on-disk file
+    untouched and the next run reprocesses cleanly from the original.
+    """
     with open(path) as f:
         data = json.load(f)
     if data.get("_enriched"):
-        return
+        return False
     _enrich_data(data)
     data["_enriched"] = True
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
     print(f"Enriched in place: {path}")
+    return True
 
 
 def process_all_folders(run_id=None):
@@ -255,13 +261,10 @@ def process_all_folders(run_id=None):
     processed = skipped = errors = 0
     for norm in root.rglob("_cache/normalized.json"):
         try:
-            with open(norm) as f:
-                before = json.load(f).get("_enriched", False)
-            enrich_file(str(norm))
-            if before:
-                skipped += 1
-            else:
+            if enrich_file(norm):
                 processed += 1
+            else:
+                skipped += 1
         except Exception as e:
             print(f"ERROR enriching {norm}: {e}")
             errors += 1
