@@ -17,7 +17,8 @@ from difflib import SequenceMatcher
 from qwen_vl_utils import process_vision_info
 from tqdm.auto import tqdm
 
-from config.paths import REPO_ROOT
+from pathlib import Path
+from config import run_layout as rl
 
 
 class QwenVQAEvaluator:
@@ -317,58 +318,66 @@ class QwenVQAEvaluator:
             }
 
     def _save_results(self, data):
-        # Construct base path (outputs live under artifacts/evaluation, read by the metrics pipeline)
-        base_path = os.path.join(
-            str(REPO_ROOT), "artifacts", "evaluation", self.config["dataset"], "LLM"
-        )
-
-        # Get window size from config
+        few_shot_enabled = self.config.get("few_shot", {}).get("enabled", False)
+        mode = rl.derive_mode(self.finetuned, few_shot_enabled)
+        ocr_enabled = bool(self.config.get("ocr_enabled", False))
         window_size = self.model_config.get("batch_size", 1)
+        slug = rl.build_slug(mode, ocr_enabled, window_size)
 
-        # Create processing type folder name
-        processing_folder = f"results_w{window_size}"
+        dataset = self.config["dataset"]
+        split = self.config.get("split", "val")
+        n_items = len(data.get("corrupted_questions", []))
+        run_id = os.environ.get("VQA_RUN_ID") or rl.make_run_id(split, n_items)
 
-        # Add OCR and UNABLE flags if enabled
-        if self.config["ocr_enabled"]:
-            processing_folder += "_OCR"
-        if not self.config["unable_to_respond_aware"]:
-            processing_folder += "_UNABLE"
+        # Allow tests/orchestration to redirect the runs root.
+        runs_dir_override = os.environ.get("VQA_EVAL_RUNS_DIR")
+        if runs_dir_override:
+            rl.EVAL_RUNS_DIR = Path(runs_dir_override)
 
-        # Add unique folder tag if few-shot is enabled
-        few_shot_config = self.config.get("few_shot", {})
-        if few_shot_config.get("enabled", False):
-            n_shots = few_shot_config.get("n_shots", 2)
-            shot_type = few_shot_config.get("shot_type", "mixed")
-            processing_folder += f"_fewshot_{shot_type}_{n_shots}"
+        leaf = rl.leaf_dir(run_id, dataset, slug)
+        leaf.mkdir(parents=True, exist_ok=True)
 
-        # Add adapter suffix if PEFT adapter is loaded
-        adapter_path = self.model_config.get("adapter_path")
-        if adapter_path:
-            adapter_name = os.path.basename(adapter_path.rstrip("/"))
-            processing_folder += f"_{adapter_name}"
-
-        # Answerable pass goes to its own folder so it never overwrites corrupted results
-        if self.answerable:
-            processing_folder += "_answerable"
-
-        # Create output filename with model name
-        output_filename = f"{self.model_config['name']}_vqa_analysis_results.json"
-
-        # Combine paths
-        output_dir = os.path.join(base_path, processing_folder, "original")
-
-        # Create directories if they don't exist
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Full path for the output file
-        output_file = os.path.join(output_dir, output_filename)
-
+        predictions_path = leaf / "predictions.json"
         try:
-            with open(output_file, "w") as f:
+            with open(predictions_path, "w") as f:
                 json.dump(data, f, indent=2)
-            print(f"Results successfully saved to {output_file}")
+            print(f"Predictions saved to {predictions_path}")
         except Exception as e:
-            print(f"Error saving results: {str(e)}")
+            print(f"Error saving predictions: {str(e)}")
+            return
+
+        counts = {}
+        if self.questions in ("both", "corrupted"):
+            counts["corrupted"] = n_items
+        if self.questions in ("both", "clean"):
+            counts["clean"] = n_items
+
+        manifest = {
+            "run_id": run_id,
+            "dataset": dataset,
+            "config": slug,
+            "split": split,
+            "n": n_items,
+            "seed": self.seed,
+            "config_path": os.environ.get("VQA_CONFIG_PATH", ""),
+            "input_file": self.config.get("input_file"),
+            "model": self.model_config["model_name"],
+            "model_name": self.model_config["name"],
+            "adapter": self.model_config.get("adapter_path"),
+            "ocr_enabled": ocr_enabled,
+            "window_size": window_size,
+            "few_shot": self.config.get("few_shot", {"enabled": False}),
+            "questions": self.questions,
+            "counts": counts,
+            "min_pixels": self.model_config.get("min_pixels"),
+            "max_pixels": self.model_config.get("max_pixels"),
+            "git_commit": rl.git_commit(),
+            "git_dirty": rl.git_dirty(),
+            "created_at": rl.utc_now_iso(),
+        }
+        manifest["label"] = rl.human_label(manifest)
+        rl.write_manifest(leaf / "manifest.json", manifest)
+        print(f"Manifest saved to {leaf / 'manifest.json'}")
 
     def _select_few_shot_examples(self, dataset_pool, current_item):
         """Selects N distinct few-shot demonstrations based on configured shot_type."""
@@ -495,36 +504,38 @@ class QwenVQAEvaluator:
 
         return turns
 
+    QUESTION_SIDES = {
+        "both": ["corrupted", "clean"],
+        "corrupted": ["corrupted"],
+        "clean": ["clean"],
+    }
+
     def _process_single_question(self, item, dataset_pool):
-        """Processes a single visual question item and appends its evaluation results."""
+        """Evaluate the requested question side(s) for one item, storing both
+        answers in a single vqa_result (corrupted -> QUR/UR, clean -> FRR)."""
         if "verification_result" not in item:
             item["verification_result"] = {}
         if "vqa_results" not in item["verification_result"]:
             item["verification_result"]["vqa_results"] = []
 
-        question = item["original_question"] if self.answerable else item["corrupted_question"]
         pages = item["layout_analysis"]["pages"]
-
-        # Resolve raw page identifiers to absolute image paths
         image_paths = [
             os.path.join(self.images_base_path, os.path.basename(page_id))
             for page_id in pages
         ]
-
-        # Retrieve OCR text if enabled
         ocr_text = self.get_ocr_text(pages) if self.config.get("ocr_enabled", False) else None
 
-        # Build few-shot turns if enabled
         few_shot_turns = None
         few_shot_config = self.config.get("few_shot", {})
         if few_shot_config.get("enabled", False):
             shots = self._select_few_shot_examples(dataset_pool, item)
             few_shot_turns = self._build_few_shot_turns(shots)
 
-        # Generate model response
-        result = self.generate_answer(question, image_paths, ocr_text, few_shot_turns=few_shot_turns)
+        question_text = {
+            "corrupted": item["corrupted_question"],
+            "clean": item["original_question"],
+        }
 
-        # Create structured VQA result
         vqa_result = {
             "model_type": "qwen",
             "model_config": {
@@ -535,20 +546,21 @@ class QwenVQAEvaluator:
             },
             "ocr_enabled": bool(ocr_text),
             "few_shot_config": self.config.get("few_shot", {"enabled": False}),
-            "question": question,
-            "answer": result.get("answer", "Unable to determine"),
-            "image_paths": image_paths,
-            "analysis_type": result.get("analysis_type", ""),
             "timestamp": datetime.datetime.now().isoformat(),
         }
 
-        # Check and record any generation errors
-        if "error" in result:
-            vqa_result["error"] = result["error"]
-            vqa_result["traceback"] = result.get("traceback", "")
-            success = False
-        else:
-            success = True
+        success = True
+        for side in self.QUESTION_SIDES[self.questions]:
+            result = self.generate_answer(
+                question_text[side], image_paths, ocr_text, few_shot_turns=few_shot_turns
+            )
+            vqa_result[f"question_{side}"] = question_text[side]
+            vqa_result[f"answer_{side}"] = result.get("answer", "Unable to determine")
+            vqa_result["analysis_type"] = result.get("analysis_type", "")
+            if "error" in result:
+                vqa_result[f"error_{side}"] = result["error"]
+                vqa_result[f"traceback_{side}"] = result.get("traceback", "")
+                success = False
 
         item["verification_result"]["vqa_results"].append(vqa_result)
         return success
