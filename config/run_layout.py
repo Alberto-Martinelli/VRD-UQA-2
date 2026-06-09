@@ -31,7 +31,9 @@ def utc_now_iso() -> str:
 
 
 def make_run_id(split: str, n: int, when: datetime.datetime | None = None) -> str:
-    when = when or datetime.datetime.now()
+    # UTC default keeps the run_id timestamp consistent with utc_now_iso()
+    # (used for created_at) regardless of the node's local timezone.
+    when = when or datetime.datetime.now(datetime.timezone.utc)
     return f"eval_{split}_{n}_{when:%Y%m%d_%H%M%S}"
 
 

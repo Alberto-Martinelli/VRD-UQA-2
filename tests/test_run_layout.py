@@ -28,6 +28,8 @@ def test_human_label():
     assert rl.human_label(m) == "Fine-Tuned (LoRA) · OCR"
     m2 = {"config": "zeroshot_noocr", "ocr_enabled": False, "window_size": 1}
     assert rl.human_label(m2) == "Zero-Shot · no-OCR"
+    # Unknown / missing mode falls back to "?".
+    assert rl.human_label({}) == "? · no-OCR"
 
 
 if __name__ == "__main__":
