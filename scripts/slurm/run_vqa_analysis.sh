@@ -29,6 +29,12 @@ source "$HOME/VRD-UQA/scripts/env.sh"
 
 WORK_DIR=$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}
 
+# Reclaim the per-job scratch dir on any exit (success, error, timeout, scancel)
+# so SCRATCH_FLASH doesn't accumulate a full repo copy per run. Results are
+# copied back to $HOME before the script exits, so this only drops the scratch
+# working copy. cd out first so removing the CWD is safe.
+trap 'cd "$HOME"; rm -rf "$WORK_DIR"' EXIT
+
 rm -rf $WORK_DIR
 # mkdir -p $WORK_DIR
 rsync -aq --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' --exclude='finetuning' $HOME/VRD-UQA/ $WORK_DIR/
