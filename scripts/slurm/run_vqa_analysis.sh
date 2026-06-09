@@ -74,7 +74,7 @@ for path in ['VQA_analysis/config_zeroshot.json', 'VQA_analysis/config_fewshot.j
     # To change condition, edit the flags below: drop --finetuned for the base model,
     # drop --answerable for the unanswerable set, or use $ZS_CONFIG for zero-shot.
     printf "\n=== QWEN2.5 — FEW-SHOT FINETUNED — ANSWERABLE — %s ===\n" "$D"
-    uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned --answerable
+    uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned #--answerable
 done
 
 # ---- Metrics ----
