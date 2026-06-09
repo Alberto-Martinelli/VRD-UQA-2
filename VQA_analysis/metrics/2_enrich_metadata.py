@@ -1,8 +1,5 @@
 import json
-import time
-import os
-from pathlib import Path
-from config.paths import REPO_ROOT
+from config.run_layout import EVAL_RUNS_DIR, run_dir
 
 
 # max_tokens = 1024
@@ -66,9 +63,11 @@ def find_patch_matches(patch_entities, search_text, page_id=None):
     return matches
 
 
-def process_vqa_file(input_file, output_file):
-    """
-    Processes the VQA json file:
+def _enrich_data(data):
+    """Enrich entity metadata on a loaded VQA dict, mutating it in place.
+    (Operates on entity fields only; answer arrays are left untouched.)
+
+    Steps performed:
       1. For complexity‑1 questions, assigns the sole entity type to all original entities.
       2. Builds a global mapping of enriched entity info from all complexity‑1 questions' original_entity objects.
       3. For every question (regardless of complexity), updates its original_entity objects using the global mapping.
@@ -82,10 +81,6 @@ def process_vqa_file(input_file, output_file):
       6. Finally, to avoid redundancy, only the basic information ("text") remains at the top level,
          while all detailed entity data (including entity type and positional info) appears inside "positions".
     """
-    # Load JSON data from the input file
-    with open(input_file, "r") as f:
-        data = json.load(f)
-
     # Step 1: For complexity‑1 questions, update each original_entity with the sole entity type declared
     for question in data.get("corrupted_questions", []):
         if question.get("complexity") == 1 and question.get("entity_type"):
@@ -236,74 +231,46 @@ def process_vqa_file(input_file, output_file):
             )
         question["question_entities"] = cleaned_entities
 
-    # Save the updated JSON data to the output file
-    with open(output_file, "w") as f:
-        json.dump(data, f, indent=2)
-    print(f"Processed file saved to {output_file}")
 
 
-def process_all_folders():
-    """
-    Processes all JSON files in subdirectories beneath the script directory.
-    Files in an "original" folder are processed and the output is written into a sibling folder "converted".
-    Files that have already been converted are skipped.
-    """
-    results_dir = REPO_ROOT / "artifacts" / "evaluation"
-
-    print("\n\n")
-    print(f"{'='*100}")
-    print(f"ADDING INFORMATIONS")
-    print(f"Scanning for converted results under: {results_dir}")
-    if not results_dir.exists():
-        print(f"ERROR: Results directory does not exist: {results_dir}")
+def enrich_file(path):
+    """Enrich a normalized.json in place. No-op if already enriched."""
+    with open(path) as f:
+        data = json.load(f)
+    if data.get("_enriched"):
         return
-    print(f"{'='*100}")
+    _enrich_data(data)
+    data["_enriched"] = True
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"Enriched in place: {path}")
 
-    total_processed = 0
-    total_skipped = 0
-    total_errors = 0
-    found_any = False
 
-    for root, dirs, files in os.walk(results_dir):
-        root_path = Path(root)
-        if root_path.name == "converted":
-            found_any = True
-            parent_dir = root_path.parent
-            augmented_dir = parent_dir / "augmented"
-            augmented_dir.mkdir(exist_ok=True)
-
-            json_files = [f for f in files if f.endswith(".json")]
-            if not json_files:
-                print(f"No JSON files found in: {root_path}")
-                continue
-
-            for json_file in json_files:
-                input_path = root_path / json_file
-                output_filename = json_file.replace(".json", "_augmented.json")
-                output_path = augmented_dir / output_filename
-
-                if output_path.exists():
-                    print(f"Skipping (already augmented): {input_path.name}")
-                    total_skipped += 1
-                    continue
-
-                print(f"\n{'-'*100}")
-                print(f"Processing : {input_path}")
-                try:
-                    process_vqa_file(str(input_path), str(output_path))
-                    total_processed += 1
-                except Exception as e:
-                    print(f"ERROR processing {input_path}: {e}")
-                    total_errors += 1
-                    continue
-
-    if not found_any:
-        print(f"WARNING: No 'converted/' folders found under {results_dir} — nothing to augment.")
-
-    print(f"\n{'='*100}")
-    print(f"Adding Informations complete — processed: {total_processed}, skipped: {total_skipped}, errors: {total_errors}")
-    print(f"{'='*100}")
+def process_all_folders(run_id=None):
+    root = run_dir(run_id) if run_id else (EVAL_RUNS_DIR / "latest")
+    print(f"{'='*100}\nENRICH — scanning normalized.json under: {root}\n{'='*100}")
+    if not root.exists():
+        print(f"ERROR: run directory does not exist: {root}")
+        return
+    processed = skipped = errors = 0
+    for norm in root.rglob("_cache/normalized.json"):
+        try:
+            with open(norm) as f:
+                before = json.load(f).get("_enriched", False)
+            enrich_file(str(norm))
+            if before:
+                skipped += 1
+            else:
+                processed += 1
+        except Exception as e:
+            print(f"ERROR enriching {norm}: {e}")
+            errors += 1
+    print(f"Enrich complete — processed: {processed}, skipped: {skipped}, errors: {errors}")
 
 
 if __name__ == "__main__":
-    process_all_folders()
+    import argparse, os
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run-id", default=os.environ.get("VQA_RUN_ID"))
+    args = parser.parse_args()
+    process_all_folders(run_id=args.run_id)
