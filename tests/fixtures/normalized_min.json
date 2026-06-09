@@ -1,0 +1,21 @@
+{
+  "_enriched": true,
+  "corrupted_questions": [
+    {
+      "complexity": 1,
+      "is_corrupted": true,
+      "verification_result": {"vqa_results": [{
+        "answer_corrupted": [{"pages": ["p1"], "answer": "n/a", "answer_converted": "unable to determine"}],
+        "answer_clean": [{"pages": ["p1"], "answer": "Rome", "answer_converted": "Rome"}]
+      }]}
+    },
+    {
+      "complexity": 2,
+      "is_corrupted": true,
+      "verification_result": {"vqa_results": [{
+        "answer_corrupted": [{"pages": ["p1"], "answer": "n/a", "answer_converted": "unable to determine"}],
+        "answer_clean": [{"pages": ["p1"], "answer": "n/a", "answer_converted": "unable to determine"}]
+      }]}
+    }
+  ]
+}

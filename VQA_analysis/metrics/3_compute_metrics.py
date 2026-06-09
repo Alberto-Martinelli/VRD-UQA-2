@@ -13,10 +13,9 @@ import re  # Added for window size extraction
 # from anls_star import anls_score
 # from gliner import GLiNER
 import pandas as pd
-import os
 import torch
 from PIL import Image
-from config.paths import REPO_ROOT
+from config import run_layout as rl
 
 ENTITY_TYPES = [
     # Numerical Corruption
@@ -230,17 +229,18 @@ class EntityIdentifier:
 
 class VQAAnalyzer:
     def __init__(
-        self, results, entity_verifier, dataset, debug=False, images_path=None
+        self, results, entity_verifier, dataset, debug=False, images_path=None, side="corrupted"
     ):
         self.results = results
         self.debug = debug
         self.entity_identifier = entity_verifier
         self.dataset = dataset
         self.images_path = images_path
+        self.side = side
         # Pre-filter once so every metric method iterates only valid corrupted results.
         self.valid_results = [
             r for r in results
-            if r["is_corrupted"]
+            if r.get("is_corrupted")
             and "verification_result" in r
             and "vqa_results" in r["verification_result"]
             and len(r["verification_result"]["vqa_results"]) > 0
@@ -248,11 +248,13 @@ class VQAAnalyzer:
 
     # ------------------------------------------------------------------ helpers
 
-    @staticmethod
-    def _get_answers(res):
-        """Return the list of answer dicts for a valid result."""
+    def _get_answers(self, res):
+        """Return the list of answer dicts for a valid result, selecting by self.side."""
         vqa_result = res["verification_result"]["vqa_results"][0]
-        return vqa_result.get("answers", vqa_result.get("answer", []))
+        return vqa_result.get(
+            f"answer_{self.side}",
+            vqa_result.get("answers", vqa_result.get("answer", [])),
+        )
 
     @staticmethod
     def _unique_entities(corrupted_entities):
@@ -898,177 +900,97 @@ def save_metric(folder, name, data, index, complexity_data=None):
             df_c.to_csv(folder / f"{name}_complexity_{i}.csv")
 
 
-def _process_model_file(result_file, entity_verifier, dataset, images_path):
-    """Load one augmented JSON, run all metrics, and return (model_name, metrics, list_len).
-    Returns None if the file should be skipped."""
-    model_name = result_file.stem.split("/")[-1].split("_")[0]
-    print(f"Model name: {model_name}")
+def _save_qur_suite(az, metrics_dir, model_name):
+    m = az.calculate_metrics()
+    *qur_pl_dicts, list_len = m["QUR_PL"]
+    m["QUR_PL"] = qur_pl_dicts
 
-    with open(result_file, "r") as f:
-        data = json.load(f)
+    def col(values):
+        return {model_name: list(values)}
 
-    # Extract base_image_dir from the input file if present, otherwise fall back to images_path argument
-    images_path = data.get("base_image_dir", images_path)
-
-    results = data.get("corrupted_questions", [])
-    if not results:
-        print(f"Warning: No corrupted questions found in {result_file}")
-        return None
-
-    print(f"Processing {result_file}")
-    print(f"Found {len(results)} questions")
-
-    analyzer = VQAAnalyzer(results, entity_verifier, dataset, debug=False, images_path=images_path)
-    metrics = analyzer.calculate_metrics()
-
-    # QUR_PL returns the page-count axis alongside the metric dicts; extract it here
-    # so the caller can use it as the DataFrame index when saving.
-    *qur_pl_dicts, list_len = metrics["QUR_PL"]
-    metrics["QUR_PL"] = qur_pl_dicts
-
-    return model_name, metrics, list_len
+    save_metric(metrics_dir, "QUR", col(m["QUR"][:5]), ["QUR", "QUR_C1", "QUR_C2", "QUR_C3", "QUR_weighted"])
+    save_metric(metrics_dir, "UR",  col(m["UR"]),       ["UR", "UR_C1", "UR_C2", "UR_C3"])
+    for name, index in [("QUR_DE", LAYOUT_TYPES), ("QUR_NLPE", MACRO_ENTITY_TYPES), ("QUR_QP", PAGE_LAYOUT),
+                        ("QUR_PL", list_len), ("QUR_DED", ["<15", "15-25", ">25"]),
+                        ("UR_DE", LAYOUT_TYPES), ("UR_NLPE", MACRO_ENTITY_TYPES),
+                        ("UR_PAGE_DE", LAYOUT_TYPES), ("UR_PAGE_QP", PAGE_LAYOUT), ("UR_PAGE_DED", ["0", "1", ">1"])]:
+        base, c1, c2, c3 = m[name]
+        save_metric(metrics_dir, name, {model_name: list(base.values())}, index,
+                    [{model_name: list(c1.values())}, {model_name: list(c2.values())}, {model_name: list(c3.values())}])
+    inpage, ip1, ip2, ip3, outpage, op1, op2, op3 = m["UR_PAGE"]
+    save_metric(metrics_dir, "UR_PAGE_inpage",  {model_name: [inpage, ip1, ip2, ip3]}, ["UR_inpage", "UR_inpage_C1", "UR_inpage_C2", "UR_inpage_C3"])
+    save_metric(metrics_dir, "UR_PAGE_outpage", {model_name: [outpage, op1, op2, op3]}, ["UR_outpage", "UR_outpage_C1", "UR_outpage_C2", "UR_outpage_C3"])
 
 
-def _collect_metrics_into_accum(accum, model_name, metrics):
-    """Merge one model's metrics into the folder-level accumulator."""
-    v, v1, v2, v3, w = metrics["QUR"]
-    accum["QUR"]["total"][model_name] = [v, v1, v2, v3, w]
-
-    # Metrics that return (base, c1, c2, c3) dicts sliced by a categorical dimension
-    for name in ["QUR_DE", "QUR_NLPE", "QUR_QP", "QUR_DED", "QUR_PL",
-                 "UR_DE", "UR_NLPE", "UR_PAGE_DE", "UR_PAGE_QP", "UR_PAGE_DED"]:
-        base, c1, c2, c3 = metrics[name]
-        accum[name]["total"][model_name] = base.values()
-        accum[name]["c1"][model_name] = c1.values()
-        accum[name]["c2"][model_name] = c2.values()
-        accum[name]["c3"][model_name] = c3.values()
-
-    v, v1, v2, v3 = metrics["UR"]
-    accum["UR"]["total"][model_name] = [v, v1, v2, v3]
-
-    # UR_PAGE splits answers into those on the page containing the corrupted entity (inpage)
-    # and those on other pages (outpage), so it gets two separate accumulator entries.
-    inpage, ip_c1, ip_c2, ip_c3, outpage, op_c1, op_c2, op_c3 = metrics["UR_PAGE"]
-    accum["UR_PAGE_inpage"]["total"][model_name] = [inpage, ip_c1, ip_c2, ip_c3]
-    accum["UR_PAGE_outpage"]["total"][model_name] = [outpage, op_c1, op_c2, op_c3]
-
-
-def generate_analysis_report(dataset, images_path):
-    entity_verifier = None  # EntityIdentifier(ENTITY_TYPES) — disabled, no external NER needed
-    base_path = REPO_ROOT / "artifacts" / "evaluation"
-    dataset_path = base_path / dataset
-    # print(f"Base path: {base_path}")
-
-    if not dataset_path.is_dir():
-        print(f"ERROR: {dataset_path} is not a directory")
+def generate_analysis_report(run_id=None, dataset=None, images_path=None):
+    entity_verifier = None
+    root = rl.run_dir(run_id) if run_id else (rl.EVAL_RUNS_DIR / "latest")
+    if not root.exists():
+        print(f"ERROR: run directory does not exist: {root}")
         return
 
-    # Search one level deep to handle both flat (dataset/results_w2/) and
-    # nested (dataset/LLM/results_w2/) folder layouts.
-    candidate_parents = [dataset_path] + [p for p in dataset_path.iterdir() if p.is_dir()]
-    result_folders = [
-        p for parent in candidate_parents
-        for p in parent.iterdir()
-        if p.is_dir() and "results" in p.name
-    ]
+    dataset_dirs = [root / dataset] if dataset else [p for p in root.iterdir() if p.is_dir() and p.name != "latest"]
 
-    for folder in result_folders:
-        print(f"\n{'#' * 100}")
-        print(f"Processing folder {folder}")
-
-        folder_results = folder / "results"
-        os.makedirs(folder_results, exist_ok=True)
-
-        # Answerable folders only need FRR — skip the full QUR/UR pipeline
-        if "_answerable" in folder.name:
-            frr_accum = {}
-            for result_file in (folder / "augmented").iterdir():
-                try:
-                    with open(result_file) as f:
-                        data = json.load(f)
-                    model_name = result_file.stem.split("_")[0]
-                    results = data.get("corrupted_questions", [])
-                    images_path_local = data.get("base_image_dir", images_path)
-                    analyzer = VQAAnalyzer(results, entity_verifier, dataset, images_path=images_path_local)
-                    v, v1, v2, v3 = analyzer.FRR()
-                    frr_accum[model_name] = [v, v1, v2, v3]
-                except Exception as e:
-                    print(f"Error processing {result_file}: {e}")
-            save_metric(folder_results, "FRR", frr_accum, ["FRR", "FRR_C1", "FRR_C2", "FRR_C3"])
-            print(f"FRR saved in {folder_results}")
+    for dataset_dir in dataset_dirs:
+        if not dataset_dir.is_dir():
+            print(f"Skipping missing dataset dir: {dataset_dir}")
             continue
-
-        # accum[metric_name][total|c1|c2|c3][model_name] = values
-        accum = {
-            name: {"total": {}, "c1": {}, "c2": {}, "c3": {}}
-            for name in [
-                "QUR_DE", "QUR_NLPE", "QUR_QP", "QUR_PL", "QUR_DED",
-                "UR_DE", "UR_NLPE", "UR_PAGE_DE", "UR_PAGE_QP", "UR_PAGE_DED",
-            ]
-        }
-        # Flat metrics (no categorical breakdown, only total + complexity slices)
-        accum["QUR"] = {"total": {}}
-        accum["UR"] = {"total": {}}
-        accum["UR_PAGE_inpage"] = {"total": {}}
-        accum["UR_PAGE_outpage"] = {"total": {}}
-        list_len = []  # page-count axis for QUR_PL; set by the last model processed
-
-        processed_models = []
-        for result_file in (folder / "augmented").iterdir():
-            print("-" * 100)
+        ds_name = dataset_dir.name
+        for leaf in sorted(p for p in dataset_dir.iterdir() if p.is_dir()):
+            manifest_path = leaf / "manifest.json"
+            norm_path = leaf / "_cache" / "normalized.json"
+            if not manifest_path.exists() or not norm_path.exists():
+                continue
             try:
-                result = _process_model_file(result_file, entity_verifier, dataset, images_path)
-                if result is None:
-                    continue
-                model_name, metrics, list_len = result
-                processed_models.append(model_name)
-                _collect_metrics_into_accum(accum, model_name, metrics)
+                manifest = rl.read_manifest(manifest_path)
+                model_name = manifest.get("model_name", "model")
+                label = manifest.get("label", rl.human_label(manifest))
+                questions = manifest.get("questions", "both")
+                slug = manifest.get("config", leaf.name)
+
+                with open(norm_path) as f:
+                    data = json.load(f)
+                results = data.get("corrupted_questions", [])
+                images_path_local = data.get("base_image_dir", images_path)
+
+                metrics_dir = leaf / "metrics"
+                metrics_dir.mkdir(exist_ok=True)
+                summary_rows = []
+
+                print(f"\n{'#'*100}\n{ds_name}/{slug}  (questions={questions}, model={model_name})")
+
+                if questions in ("both", "corrupted"):
+                    az = VQAAnalyzer(results, entity_verifier, ds_name, images_path=images_path_local, side="corrupted")
+                    _save_qur_suite(az, metrics_dir, model_name)
+                    qur = az.QUR()
+                    ur = az.UR()
+                    for tag, vals in [("QUR", qur[:4]), ("UR", ur[:4])]:
+                        for comp, v in zip(["overall", "C1", "C2", "C3"], vals):
+                            summary_rows.append({"dataset": ds_name, "config": slug, "label": label,
+                                                 "model": model_name, "metric": tag, "complexity": comp, "value": v})
+
+                if questions in ("both", "clean"):
+                    az_c = VQAAnalyzer(results, entity_verifier, ds_name, images_path=images_path_local, side="clean")
+                    frr = az_c.FRR()
+                    save_metric(metrics_dir, "FRR", {model_name: frr}, ["FRR", "FRR_C1", "FRR_C2", "FRR_C3"])
+                    for comp, v in zip(["overall", "C1", "C2", "C3"], frr):
+                        summary_rows.append({"dataset": ds_name, "config": slug, "label": label,
+                                             "model": model_name, "metric": "FRR", "complexity": comp, "value": v})
+
+                rl.append_summary_rows(manifest["run_id"], summary_rows)
+                print(f"metrics written to {metrics_dir}")
             except Exception as e:
-                print(f"Error processing {result_file}: {e}")
-
-        print(f"Saving files")
-        print(f"Processed models: {processed_models}")
-
-        a = accum
-        save_metric(folder_results, "QUR",           a["QUR"]["total"],           ["QUR", "QUR_C1", "QUR_C2", "QUR_C3", "QUR_weighted"])
-        save_metric(folder_results, "QUR_DE",         a["QUR_DE"]["total"],         LAYOUT_TYPES,       [a["QUR_DE"]["c1"],       a["QUR_DE"]["c2"],       a["QUR_DE"]["c3"]])
-        save_metric(folder_results, "QUR_NLPE",       a["QUR_NLPE"]["total"],       MACRO_ENTITY_TYPES, [a["QUR_NLPE"]["c1"],     a["QUR_NLPE"]["c2"],     a["QUR_NLPE"]["c3"]])
-        save_metric(folder_results, "QUR_QP",         a["QUR_QP"]["total"],         PAGE_LAYOUT,        [a["QUR_QP"]["c1"],       a["QUR_QP"]["c2"],       a["QUR_QP"]["c3"]])
-        save_metric(folder_results, "QUR_PL",         a["QUR_PL"]["total"],         list_len,           [a["QUR_PL"]["c1"],       a["QUR_PL"]["c2"],       a["QUR_PL"]["c3"]])
-        save_metric(folder_results, "QUR_DED",        a["QUR_DED"]["total"],        ["<15", "15-25", ">25"], [a["QUR_DED"]["c1"], a["QUR_DED"]["c2"],      a["QUR_DED"]["c3"]])
-        save_metric(folder_results, "UR",             a["UR"]["total"],             ["UR", "UR_C1", "UR_C2", "UR_C3"])
-        save_metric(folder_results, "UR_DE",          a["UR_DE"]["total"],          LAYOUT_TYPES,       [a["UR_DE"]["c1"],        a["UR_DE"]["c2"],        a["UR_DE"]["c3"]])
-        save_metric(folder_results, "UR_PAGE_inpage", a["UR_PAGE_inpage"]["total"], ["UR_inpage",  "UR_inpage_C1",  "UR_inpage_C2",  "UR_inpage_C3"])
-        save_metric(folder_results, "UR_PAGE_outpage",a["UR_PAGE_outpage"]["total"],["UR_outpage", "UR_outpage_C1", "UR_outpage_C2", "UR_outpage_C3"])
-        save_metric(folder_results, "UR_PAGE_DE",     a["UR_PAGE_DE"]["total"],     LAYOUT_TYPES,       [a["UR_PAGE_DE"]["c1"],   a["UR_PAGE_DE"]["c2"],   a["UR_PAGE_DE"]["c3"]])
-        save_metric(folder_results, "UR_NLPE",        a["UR_NLPE"]["total"],        MACRO_ENTITY_TYPES, [a["UR_NLPE"]["c1"],      a["UR_NLPE"]["c2"],      a["UR_NLPE"]["c3"]])
-        save_metric(folder_results, "UR_PAGE_QP",     a["UR_PAGE_QP"]["total"],     PAGE_LAYOUT,        [a["UR_PAGE_QP"]["c1"],   a["UR_PAGE_QP"]["c2"],   a["UR_PAGE_QP"]["c3"]])
-        save_metric(folder_results, "UR_PAGE_DED",    a["UR_PAGE_DED"]["total"],    ["0", "1", ">1"],   [a["UR_PAGE_DED"]["c1"],  a["UR_PAGE_DED"]["c2"],  a["UR_PAGE_DED"]["c3"]])
-
-        print(f"Files saved in {folder_results}")
-        print("-" * 100)
-
-        
+                import traceback
+                print(f"ERROR processing leaf {leaf}: {e}")
+                print(traceback.format_exc())
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate VQA analysis report")
-    parser.add_argument("--config", type=str, default=None, help="Path to config.json. If provided, dataset is read from it (overridden by --dataset).")
-    parser.add_argument("--dataset", type=str, default=None, help="Dataset name (folder under models/results/). Overrides --config if both are given.")
-    parser.add_argument("--images_path", type=str, default=None, help="Path to the images directory (optional fallback)")
+    import os
+    parser = argparse.ArgumentParser(description="Generate VQA analysis report for an evaluation run")
+    parser.add_argument("--run-id", default=os.environ.get("VQA_RUN_ID"))
+    parser.add_argument("--dataset", type=str, default=None, help="Limit to one dataset; default = all in the run.")
+    parser.add_argument("--images_path", type=str, default=None)
     args = parser.parse_args()
-
-    if args.dataset:
-        dataset = args.dataset
-    elif args.config:
-        with open(args.config) as f:
-            dataset = json.load(f)["dataset"]
-        print(f"Dataset from config: {dataset}")
-    else:
-        parser.error("Either --config or --dataset must be provided.")
-
-    print("\n\n")
-    print("="*100)
-    print("3. COMPUTE METRICS")
-    print("="*100)
-    generate_analysis_report(dataset=dataset, images_path=args.images_path)
+    print("\n" + "="*100 + "\n3. COMPUTE METRICS\n" + "="*100)
+    generate_analysis_report(run_id=args.run_id, dataset=args.dataset, images_path=args.images_path)
