@@ -10,12 +10,18 @@ from __future__ import annotations
 import csv
 import datetime
 import json
+import os
 import subprocess
 from pathlib import Path
 
 from config.paths import REPO_ROOT
 
-EVAL_RUNS_DIR = REPO_ROOT / "artifacts" / "evaluation_runs"
+# Default mirrors the repo layout; VQA_EVAL_RUNS_DIR wins at runtime (same
+# env-override pattern as config/paths.py SCRATCH_FLASH) so the evaluator and
+# every metrics step can be redirected to a scratch/temp tree in lockstep.
+EVAL_RUNS_DIR = Path(
+    os.getenv("VQA_EVAL_RUNS_DIR", str(REPO_ROOT / "artifacts" / "evaluation_runs"))
+)
 
 MODE_LABELS = {
     "zeroshot": "Zero-Shot",
