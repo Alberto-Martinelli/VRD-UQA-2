@@ -51,14 +51,16 @@ echo "Split: $SPLIT | Datasets: ${DATASETS[*]}"
 ZS_CONFIG="VQA_analysis/config_zeroshot.json"
 FS_CONFIG="VQA_analysis/config_fewshot.json"
 
-# ---- Evaluate each dataset ----
-# One evaluator process per dataset (model is reloaded each time; for val_300 the
-# per-dataset eval time dwarfs the load, and val_5 is a quick smoke test anyway).
+# One run_id for the whole job; the evaluator + metrics steps all write under it.
+N="${SPLIT##*_}"                       # e.g. val_300 -> 300
+SPLIT_NAME="${SPLIT%_*}"               # e.g. val_300 -> val
+export VQA_RUN_ID="eval_${SPLIT_NAME}_${N}_$(date +%Y%m%d_%H%M%S)"
+export VQA_CONFIG_PATH="$FS_CONFIG"
+echo "Run id: $VQA_RUN_ID"
+
+# ---- Evaluate each dataset (QUR+FRR in one pass via --questions both) ----
 for D in "${DATASETS[@]}"; do
     printf "\n\n########## DATASET: %s  (split=%s) ##########\n" "$D" "$SPLIT"
-
-    # Patch dataset + input_file into the scratch config copies (originals in $HOME untouched).
-    # data/ is not rsynced to the work-dir, so input_file points at the persistent copy.
     uv run python -c "
 import json, sys
 dataset, split = sys.argv[1], sys.argv[2]
@@ -66,41 +68,51 @@ input_file = f'/home/amartinelli/VRD-UQA/data/{dataset}/{dataset}_{split}/{datas
 for path in ['VQA_analysis/config_zeroshot.json', 'VQA_analysis/config_fewshot.json']:
     cfg = json.load(open(path))
     cfg['dataset'] = dataset
+    cfg['split'] = split.split('_')[0]
     cfg['input_file'] = input_file
     json.dump(cfg, open(path, 'w'), indent=4)
 " "$D" "$SPLIT"
 
-    # Active pass: few-shot, fine-tuned, answerable.
-    # To change condition, edit the flags below: drop --finetuned for the base model,
-    # drop --answerable for the unanswerable set, or use $ZS_CONFIG for zero-shot.
-    printf "\n=== QWEN2.5 — FEW-SHOT FINETUNED — ANSWERABLE — %s ===\n" "$D"
-    uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py --config_path $FS_CONFIG --finetuned #--answerable
+    printf "\n=== QWEN2.5 — FEW-SHOT FINETUNED — QUR+FRR — %s ===\n" "$D"
+    uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py --config_path "$FS_CONFIG" --finetuned --questions both
 done
 
-# ---- Metrics ----
-# Normalize + enrich once over the whole artifacts/evaluation tree (auto-skips processed files),
-# then compute metrics per dataset.
-uv run python VQA_analysis/metrics/1_normalize_unanswerable_responses.py
-uv run python VQA_analysis/metrics/2_enrich_metadata.py
-for D in "${DATASETS[@]}"; do
-    uv run python VQA_analysis/metrics/3_compute_metrics.py --dataset "$D"
-done
+# ---- Metrics (all operate on $VQA_RUN_ID) ----
+uv run python VQA_analysis/metrics/1_normalize_unanswerable_responses.py --run-id "$VQA_RUN_ID"
+uv run python VQA_analysis/metrics/2_enrich_metadata.py            --run-id "$VQA_RUN_ID"
+uv run python VQA_analysis/metrics/3_compute_metrics.py            --run-id "$VQA_RUN_ID"
 
-mv $HOME/slurm* $HOME/VRD-UQA/
+# ---- Run manifest + latest symlink ----
+uv run python -c "
+import json
+from config import run_layout as rl
+run_id = '$VQA_RUN_ID'
+datasets = '${DATASETS[*]}'.split()
+run = rl.run_dir(run_id)
+configs = sorted({leaf.name for ds in datasets for leaf in (run / ds).glob('*') if leaf.is_dir()}) if run.exists() else []
+rl.write_manifest(run / 'run_manifest.json', {
+    'run_id': run_id, 'created_at': rl.utc_now_iso(),
+    'git_commit': rl.git_commit(), 'git_dirty': rl.git_dirty(),
+    'split': '${SPLIT_NAME}', 'n': int('${N}'), 'seed': 42,
+    'datasets': datasets, 'configs': configs,
+})
+rl.update_latest_symlink(run_id)
+print('Wrote run_manifest + latest ->', run_id)
+"
 
-# Copy results back under a human-readable, sortable name (split + timestamp).
-# Only the datasets evaluated in THIS run, so the snapshot stays clean.
-RUN_NAME="eval_${SPLIT}_$(date +%Y%m%d_%H%M%S)"
-DEST="$HOME/VRD-UQA/artifacts/evaluation_runs/$RUN_NAME"
-mkdir -p "$DEST"
-for D in "${DATASETS[@]}"; do
-    if [ -d "$WORK_DIR/artifacts/evaluation/$D" ]; then
-        cp -r "$WORK_DIR/artifacts/evaluation/$D" "$DEST/$D"
-    else
-        echo "WARNING: no results produced for $D (skipping in copy-back)"
-    fi
-done
-echo "Results copied to $DEST"
+mv $HOME/slurm* $HOME/VRD-UQA/ 2>/dev/null || true
+
+# Copy the clean run tree back to \$HOME (1:1 — no reshaping).
+SRC="$WORK_DIR/artifacts/evaluation_runs/$VQA_RUN_ID"
+DEST="$HOME/VRD-UQA/artifacts/evaluation_runs/$VQA_RUN_ID"
+if [ -d "$SRC" ]; then
+    mkdir -p "$DEST"
+    cp -r "$SRC/." "$DEST/"
+    ln -sfn "$VQA_RUN_ID" "$HOME/VRD-UQA/artifacts/evaluation_runs/latest"
+    echo "Results copied to $DEST"
+else
+    echo "WARNING: no run dir produced at $SRC"
+fi
 
 
 ELAPSED=$(( SECONDS - START_TIME ))
