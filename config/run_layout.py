@@ -77,12 +77,12 @@ def write_manifest(path: Path, data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
-def read_manifest(path) -> dict:
+def read_manifest(path: Path | str) -> dict:
     with open(path) as f:
         return json.load(f)
 
 
-def _git(args) -> str:
+def _git(args: list[str]) -> str:
     return subprocess.check_output(
         ["git", *args], cwd=str(REPO_ROOT), text=True, stderr=subprocess.DEVNULL
     ).strip()
@@ -102,7 +102,9 @@ def git_dirty() -> bool:
         return False
 
 
-def append_summary_rows(run_id: str, rows) -> None:
+def append_summary_rows(run_id: str, rows: list[dict]) -> None:
+    # Single writer per run (one step-3 metrics process), so the header-once
+    # check needs no cross-process lock.
     path = run_dir(run_id) / "summary.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     exists = path.exists()
@@ -117,9 +119,8 @@ def append_summary_rows(run_id: str, rows) -> None:
 def update_latest_symlink(run_id: str) -> None:
     EVAL_RUNS_DIR.mkdir(parents=True, exist_ok=True)
     link = EVAL_RUNS_DIR / "latest"
-    if link.is_symlink() or link.exists():
-        try:
-            link.unlink()
-        except OSError:
-            pass
+    # missing_ok swallows only ENOENT (already gone); a real failure
+    # (e.g. permission/stale handle on BeeGFS) propagates with its true cause
+    # instead of surfacing as a misleading FileExistsError below.
+    link.unlink(missing_ok=True)
     link.symlink_to(run_id)  # relative target inside EVAL_RUNS_DIR
