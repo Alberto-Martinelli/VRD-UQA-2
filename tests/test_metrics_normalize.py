@@ -42,7 +42,8 @@ def test_label_vqa_answers_both_sides():
     inp, out = tmp / "predictions.json", tmp / "normalized.json"
     inp.write_text(json.dumps(src))
     STEP1.label_vqa_answers(str(inp), str(out), classify_fn=lambda a: a)
-    r = json.load(open(out))["corrupted_questions"][0]["verification_result"]["vqa_results"][0]
+    with open(out) as f:
+        r = json.load(f)["corrupted_questions"][0]["verification_result"]["vqa_results"][0]
     assert r["answer_corrupted"][0]["answer_converted"] == "unable to determine"
     assert r["answer_clean"][0]["answer_converted"] == "$42"
 

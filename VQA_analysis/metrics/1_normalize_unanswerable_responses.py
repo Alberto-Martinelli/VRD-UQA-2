@@ -1,13 +1,12 @@
 """
-Post-processes VQA result JSON files by normalising model answers that mean
-"unable to answer" into a canonical "unable to determine" string.
+Post-processes evaluation-run leaf directories by normalising model answers
+that mean "unable to answer" into a canonical "unable to determine" string.
 
-Scans all 'original/' sub-folders under
-the pipeline directory and writes converted files into a sibling 'converted/'
-folder, skipping files that have already been processed.
+Scans every leaf under artifacts/evaluation_runs/<run_id>/ (each holding a
+predictions.json + manifest.json), canonicalises both answer sides, and writes
+_cache/normalized.json, skipping leaves already processed.
 """
 import json
-import os
 from tqdm import tqdm
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -99,7 +98,7 @@ UNABLE_PHRASES = [
     "unable to determine", "not answerable", "not provided", "not available",
     "not in the image", "not in the document", "not found", "not contain",
     "not include", "cannot determine", "cannot answer", "cannot provide",
-    "cannot find", "i don ' t know", "unknown",
+    "cannot find", "i don ' t know", "i don't know", "unknown",
 ]
 
 
@@ -132,6 +131,9 @@ def label_vqa_answers(input_file, output_file, classify_fn=None):
 
     for question in tqdm(data.get("corrupted_questions", []), mininterval=30):
         for result in question.get("verification_result", {}).get("vqa_results", []):
+            # A record carries either the new dual-answer keys or the legacy
+            # single key, never both, so iterating all four is safe (no double
+            # processing). "answers"/"answer" are kept only for old files.
             for side_key in ("answer_corrupted", "answer_clean", "answers", "answer"):
                 answers = result.get(side_key)
                 if not isinstance(answers, list):
