@@ -60,3 +60,66 @@ def human_label(manifest: dict) -> str:
     if w and w != 1:
         label += f" · w{w}"
     return label
+
+
+def run_dir(run_id: str) -> Path:
+    return EVAL_RUNS_DIR / run_id
+
+
+def leaf_dir(run_id: str, dataset: str, slug: str) -> Path:
+    return run_dir(run_id) / dataset / slug
+
+
+def write_manifest(path: Path, data: dict) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def read_manifest(path) -> dict:
+    with open(path) as f:
+        return json.load(f)
+
+
+def _git(args) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=str(REPO_ROOT), text=True, stderr=subprocess.DEVNULL
+    ).strip()
+
+
+def git_commit() -> str:
+    try:
+        return _git(["rev-parse", "--short", "HEAD"])
+    except Exception:
+        return "unknown"
+
+
+def git_dirty() -> bool:
+    try:
+        return bool(_git(["status", "--porcelain"]))
+    except Exception:
+        return False
+
+
+def append_summary_rows(run_id: str, rows) -> None:
+    path = run_dir(run_id) / "summary.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    exists = path.exists()
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=SUMMARY_COLUMNS)
+        if not exists:
+            writer.writeheader()
+        for r in rows:
+            writer.writerow({k: r.get(k, "") for k in SUMMARY_COLUMNS})
+
+
+def update_latest_symlink(run_id: str) -> None:
+    EVAL_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    link = EVAL_RUNS_DIR / "latest"
+    if link.is_symlink() or link.exists():
+        try:
+            link.unlink()
+        except OSError:
+            pass
+    link.symlink_to(run_id)  # relative target inside EVAL_RUNS_DIR
