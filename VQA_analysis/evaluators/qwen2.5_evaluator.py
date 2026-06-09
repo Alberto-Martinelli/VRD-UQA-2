@@ -53,11 +53,14 @@ class QwenVQAEvaluator:
         self.initialize_model()
 
     def _set_seed(self):
+        # Seeds stdlib random (drives sampling + few-shot selection in evaluate,
+        # independent of the Transformers model-load RNG usage) plus the
+        # torch/numpy states for completeness.
         random.seed(self.seed)
         try:
             import numpy as np
             np.random.seed(self.seed)
-        except Exception:
+        except ImportError:
             pass
         torch.manual_seed(self.seed)
         if torch.cuda.is_available():
