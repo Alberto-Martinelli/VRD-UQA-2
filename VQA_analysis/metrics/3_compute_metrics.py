@@ -251,12 +251,15 @@ class VQAAnalyzer:
     # ------------------------------------------------------------------ helpers
 
     def _get_answers(self, res):
-        """Return the list of answer dicts for a valid result, selecting by self.side."""
+        """Return the list of answer dicts for a valid result, selecting by self.side.
+        Defensively coerces a non-list (e.g. a legacy error string) to [] so the
+        per-answer metric loops never iterate over a string's characters."""
         vqa_result = res["verification_result"]["vqa_results"][0]
-        return vqa_result.get(
+        answers = vqa_result.get(
             f"answer_{self.side}",
             vqa_result.get("answers", vqa_result.get("answer", [])),
         )
+        return answers if isinstance(answers, list) else []
 
     @staticmethod
     def _unique_entities(corrupted_entities):

@@ -41,8 +41,19 @@ def test_get_answers_side_selection():
     assert az2._get_answers(az2.valid_results[0])[0]["answer_converted"] == "Rome"
 
 
+def test_get_answers_tolerates_nonlist():
+    # A legacy/error record may store a flat string under answer_<side>; metrics
+    # must coerce it to [] and not iterate over its characters.
+    res = {"is_corrupted": True, "complexity": 1, "verification_result":
+           {"vqa_results": [{"answer_corrupted": "Unable to determine: error"}]}}
+    az = STEP3.VQAAnalyzer([res], None, "BDocs", side="corrupted")
+    assert az._get_answers(az.valid_results[0]) == []
+    assert az.QUR()[0] == 0.0  # does not crash; counts as a non-refusal
+
+
 if __name__ == "__main__":
     test_qur_reads_corrupted_side()
     test_frr_reads_clean_side()
     test_get_answers_side_selection()
+    test_get_answers_tolerates_nonlist()
     print("OK: metrics step 3 compute")

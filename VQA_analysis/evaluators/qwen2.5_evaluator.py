@@ -17,7 +17,6 @@ from difflib import SequenceMatcher
 from qwen_vl_utils import process_vision_info
 from tqdm.auto import tqdm
 
-from pathlib import Path
 from config import run_layout as rl
 
 
@@ -329,11 +328,8 @@ class QwenVQAEvaluator:
         n_items = len(data.get("corrupted_questions", []))
         run_id = os.environ.get("VQA_RUN_ID") or rl.make_run_id(split, n_items)
 
-        # Allow tests/orchestration to redirect the runs root.
-        runs_dir_override = os.environ.get("VQA_EVAL_RUNS_DIR")
-        if runs_dir_override:
-            rl.EVAL_RUNS_DIR = Path(runs_dir_override)
-
+        # rl.EVAL_RUNS_DIR already honors VQA_EVAL_RUNS_DIR (read at import), so
+        # tests/orchestration can redirect the runs root without extra wiring here.
         leaf = rl.leaf_dir(run_id, dataset, slug)
         leaf.mkdir(parents=True, exist_ok=True)
 
@@ -554,8 +550,14 @@ class QwenVQAEvaluator:
             result = self.generate_answer(
                 question_text[side], image_paths, ocr_text, few_shot_turns=few_shot_turns
             )
+            answer = result.get("answer", "Unable to determine")
+            if not isinstance(answer, list):
+                # Error path: generate_answer returns a flat string. Wrap it so the
+                # answer schema stays uniform (list of {pages, answer}) for the
+                # normalize + metrics steps, which iterate per-answer dicts.
+                answer = [{"pages": image_paths, "answer": answer}]
             vqa_result[f"question_{side}"] = question_text[side]
-            vqa_result[f"answer_{side}"] = result.get("answer", "Unable to determine")
+            vqa_result[f"answer_{side}"] = answer
             vqa_result["analysis_type"] = result.get("analysis_type", "")
             if "error" in result:
                 vqa_result[f"error_{side}"] = result["error"]
