@@ -47,6 +47,7 @@
     "input_file": "data/BDocs/BDocs_val_300/BDocs_unanswerable_corrupted_questions_just_false.json",
     "output_file": "vqa_analysis_results.json",
     "sampling_percentage": 100,
+    "seed": 42,
     "ocr_enabled": true,
     "unable_to_respond_aware": true,
     "few_shot": {

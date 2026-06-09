@@ -21,13 +21,14 @@ from config.paths import REPO_ROOT
 
 
 class QwenVQAEvaluator:
-    def __init__(self, config_path, finetuned, answerable=False):
+    def __init__(self, config_path, finetuned, questions="both"):
         with open(config_path) as f:
             self.config = json.load(f)
 
-        # Get Qwen-specific configuration - now nested under "llm"
         self.finetuned = finetuned
-        self.answerable = answerable
+        self.questions = questions
+        self.seed = self.config.get("seed", 42)
+        self._set_seed()
         if self.finetuned:
             self.model_config = self.config["open_source_models"]["qwen2.5_finetuned"]
         else:
@@ -50,6 +51,17 @@ class QwenVQAEvaluator:
                 print(f"Warning: could not parse base_image_dir from input file {input_file}: {e}")
 
         self.initialize_model()
+
+    def _set_seed(self):
+        random.seed(self.seed)
+        try:
+            import numpy as np
+            np.random.seed(self.seed)
+        except Exception:
+            pass
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
 
     def _create_prompt(self, question, ocr_text=None):
         unable_to_respond_line = (
@@ -599,13 +611,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", type=str, required=True)
     parser.add_argument("--finetuned", action="store_true")
-    parser.add_argument("--answerable", action="store_true")
+    parser.add_argument(
+        "--questions", choices=["both", "corrupted", "clean"], default="both",
+        help="Which question side(s) to evaluate: both (default), corrupted (QUR), or clean (FRR).",
+    )
     args = parser.parse_args()
-    config_path = args.config_path
-    finetuned = args.finetuned
 
-    evaluator = QwenVQAEvaluator(config_path, finetuned, answerable=args.answerable)
-    print("Starting QWEN 2.5 evaluator")
+    evaluator = QwenVQAEvaluator(args.config_path, args.finetuned, questions=args.questions)
+    print(f"Starting QWEN 2.5 evaluator (questions={args.questions}, seed={evaluator.seed})")
     evaluator.evaluate()
 
 
