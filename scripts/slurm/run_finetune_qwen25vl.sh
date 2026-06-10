@@ -63,9 +63,20 @@ cat "$CONFIG"
 
 llamafactory-cli train "$CONFIG"
 
-# ---- Copy trained adapter + training artifacts back to the repo ----
 # Read output_dir straight from the config so the two never drift.
 OUTPUT_DIR="$(sed -nE 's/^output_dir:[[:space:]]*//p' "$CONFIG" | tr -d "\"'")"
+
+# ---- Write run_manifest.json into the training output dir (best-effort) ----
+# Capture git from the real repo ($HOME has .git; the rsync'd work-copy doesn't).
+# The manifest writer never fails the job; '|| true' is belt-and-suspenders.
+GIT_COMMIT="$(cd "$HOME/VRD-UQA" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [ -n "$(cd "$HOME/VRD-UQA" && git status --porcelain 2>/dev/null)" ]; then GIT_DIRTY=true; else GIT_DIRTY=false; fi
+python "$WORK_DIR/VRD-UQA/finetuning/write_run_manifest.py" \
+    --config "$CONFIG" --output-dir "$OUTPUT_DIR" \
+    --git-commit "$GIT_COMMIT" --git-dirty "$GIT_DIRTY" || true
+
+# ---- Copy trained adapter + training artifacts back to the repo ----
+# (run_manifest.json lives in OUTPUT_DIR and is carried back by the rsync below.)
 DEST="$HOME/VRD-UQA/artifacts/finetuning/qwen25vl_lora_sft"
 if [ -n "$OUTPUT_DIR" ] && [ -d "$OUTPUT_DIR" ]; then
     mkdir -p "$DEST"
