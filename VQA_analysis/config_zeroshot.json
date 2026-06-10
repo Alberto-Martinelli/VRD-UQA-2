@@ -6,7 +6,7 @@
             "max_tokens": 1024,
             "min_pixels": 200704,
             "max_pixels": 501760,
-            "use_flash_attention": false,
+            "use_flash_attention": true,
             "name": "Qwen_2.5_7B"
         },
         "qwen2.5_finetuned": {
@@ -16,7 +16,7 @@
             "max_tokens": 1024,
             "min_pixels": 200704,
             "max_pixels": 501760,
-            "use_flash_attention": false,
+            "use_flash_attention": true,
             "name": "Qwen_2.5_7B_finetuned"
         },
         "qwen3": {

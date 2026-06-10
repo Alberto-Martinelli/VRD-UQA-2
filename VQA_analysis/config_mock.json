@@ -6,7 +6,7 @@
             "max_tokens": 1024,
             "min_pixels": 200704,
             "max_pixels": 501760,
-            "use_flash_attention": false,
+            "use_flash_attention": true,
             "name": "Qwen_2.5_7B"
         },
         "qwen2.5_finetuned": {
@@ -16,7 +16,7 @@
             "max_tokens": 1024,
             "min_pixels": 200704,
             "max_pixels": 501760,
-            "use_flash_attention": false,
+            "use_flash_attention": true,
             "name": "Qwen_2.5_7B_finetuned"
         },
         "qwen3": {
@@ -32,14 +32,14 @@
             "model_name": "meta-llama/Llama-3.2-11B-Vision-Instruct",
             "batch_size": 1,
             "max_tokens": 1024,
-            "use_flash_attention": false,
+            "use_flash_attention": true,
             "name": "Llama3.2-11B"
         },
         "phi4": {
             "model_name": "microsoft/Phi-4-multimodal-instruct",
             "batch_size": 1,
             "max_tokens": 1024,
-            "use_flash_attention": false,
+            "use_flash_attention": true,
             "name": "Phi4-multimodal"
         }
     },

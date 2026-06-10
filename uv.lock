@@ -323,6 +323,24 @@ wheels = [
 ]
 
 [[package]]
+name = "flash-attn"
+version = "2.7.4.post1"
+source = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1%2Bcu12torch2.5cxx11abiFALSE-cp312-cp312-linux_x86_64.whl" }
+dependencies = [
+    { name = "einops", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+wheels = [
+    { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1%2Bcu12torch2.5cxx11abiFALSE-cp312-cp312-linux_x86_64.whl", hash = "sha256:a496f383c843ed0cc6e01302556a0947f56828f1ec2b54e5297c4c7eaae39357" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "einops" },
+    { name = "torch" },
+]
+
+[[package]]
 name = "flatbuffers"
 version = "25.12.19"
 source = { registry = "https://pypi.org/simple" }
@@ -1599,6 +1617,7 @@ dependencies = [
     { name = "datasets", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "doclayout-yolo", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "einops", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "flash-attn", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "gliner", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "google-generativeai", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "huggingface-hub", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -1629,6 +1648,7 @@ requires-dist = [
     { name = "datasets", specifier = "<4.0.0" },
     { name = "doclayout-yolo", specifier = ">=0.0.4" },
     { name = "einops", specifier = ">=0.8.2" },
+    { name = "flash-attn", marker = "sys_platform == 'linux'", url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1%2Bcu12torch2.5cxx11abiFALSE-cp312-cp312-linux_x86_64.whl" },
     { name = "gliner", specifier = ">=0.2.25" },
     { name = "google-generativeai", specifier = ">=0.8.6" },
     { name = "huggingface-hub", specifier = "<=1.5.0" },

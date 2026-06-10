@@ -9,6 +9,10 @@ dependencies = [
     "datasets<4.0.0",
     "doclayout-yolo>=0.0.4",
     "einops>=0.8.2",
+    # FlashAttention-2: linux-only prebuilt wheel matching torch 2.5 / cu12 / cp312 /
+    # cxx11abiFALSE (no compilation needed; the darwin env in [tool.uv].environments
+    # skips it via the marker). Enables attn_implementation="flash_attention_2".
+    "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1%2Bcu12torch2.5cxx11abiFALSE-cp312-cp312-linux_x86_64.whl ; sys_platform == 'linux'",
     "gliner>=0.2.25",
     "google-generativeai>=0.8.6",
     "huggingface-hub<=1.5.0",
@@ -34,6 +38,10 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Required so hatchling accepts the direct-URL flash-attn wheel in dependencies.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 # Install the repo's own packages (editable via `uv sync`) so `config` and
 # `datasets_api` import from anywhere — SLURM by-path scripts, -m, notebooks —
