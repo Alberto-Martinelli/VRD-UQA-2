@@ -16,7 +16,8 @@ template: phi4
 cutoff_len: 4096
 max_samples: 50
 overwrite_cache: true
-preprocessing_num_workers: 4
+# Phi4MMProcessor's InputMode enum is not picklable -> single-process map avoids the crash.
+preprocessing_num_workers: 1
 
 ### output
 output_dir: /mnt/beegfs/amartinelli/finetune_out/phi4mm_lora_smoke

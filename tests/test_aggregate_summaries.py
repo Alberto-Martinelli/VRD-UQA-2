@@ -19,9 +19,9 @@ def test_aggregates_multiple_runs():
     tmp = tempfile.mkdtemp()
     runs = Path(tmp) / "runs"
     os.environ["VQA_EVAL_RUNS_DIR"] = str(runs)
-    _write_summary(runs / "eval_val_100_llama_BDocs",
+    _write_summary(runs / "eval_val_100_internvl_BDocs",
                    [{"dataset": "BDocs", "config": "zeroshot_ocr", "label": "Zero-Shot",
-                     "model": "Llama3.2-11B", "metric": "QUR", "complexity": "overall", "value": "0.5"}])
+                     "model": "InternVL3.5-8B", "metric": "QUR", "complexity": "overall", "value": "0.5"}])
     _write_summary(runs / "eval_val_100_phi4_BDocs",
                    [{"dataset": "BDocs", "config": "zeroshot_ocr", "label": "Zero-Shot",
                      "model": "Phi4-multimodal", "metric": "QUR", "complexity": "overall", "value": "0.6"}])
@@ -36,8 +36,8 @@ def test_aggregates_multiple_runs():
     with open(out) as f:
         rows = list(csv.DictReader(f))
     models = sorted(r["model"] for r in rows)
-    assert models == ["Llama3.2-11B", "Phi4-multimodal"], models
-    assert {r["run_id"] for r in rows} == {"eval_val_100_llama_BDocs", "eval_val_100_phi4_BDocs"}
+    assert models == ["InternVL3.5-8B", "Phi4-multimodal"], models
+    assert {r["run_id"] for r in rows} == {"eval_val_100_internvl_BDocs", "eval_val_100_phi4_BDocs"}
 
 
 if __name__ == "__main__":

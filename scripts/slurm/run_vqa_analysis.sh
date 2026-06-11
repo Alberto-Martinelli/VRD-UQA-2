@@ -11,9 +11,9 @@
 # One model x one dataset x one split per job, so jobs run in parallel safely.
 # Usage:
 #   sbatch run_vqa_analysis.sh <model> <dataset> <split>
-#   e.g. sbatch run_vqa_analysis.sh llama BDocs val_100
+#   e.g. sbatch run_vqa_analysis.sh phi4 BDocs val_100
 #
-#   <model>   = qwen2.5 | llama | phi4 | internvl
+#   <model>   = qwen2.5 | phi4 | internvl
 #   <dataset> = BDocs | DUDE | MPDocVQA | SlideVQA
 #   <split>   = val_300 | val_100 | val_5 | ...
 #
@@ -36,7 +36,6 @@ RUN_TAG="${RUN_TAG:-}"
 # for that model (Phase B wires the *_finetuned config entries + FINETUNE flag).
 case "$MODEL" in
   qwen2.5)  ENTRY="VQA_analysis/evaluators/qwen2.5_evaluator.py" ;;
-  llama)    ENTRY="VQA_analysis/evaluators/llama_evaluator.py" ;;
   phi4)     ENTRY="VQA_analysis/evaluators/phi4_evaluator.py" ;;
   internvl) ENTRY="VQA_analysis/evaluators/internvl_evaluator.py" ;;
   *) echo "ERROR: unknown model '$MODEL'"; exit 2 ;;

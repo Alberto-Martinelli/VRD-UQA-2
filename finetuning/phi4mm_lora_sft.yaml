@@ -23,7 +23,9 @@ dataset_dir: /mnt/beegfs/amartinelli/finetune_phi4mm/VRD-UQA/finetuning
 template: phi4
 cutoff_len: 4096
 overwrite_cache: true
-preprocessing_num_workers: 4
+# Phi4MMProcessor's InputMode enum is not picklable (recursive self-ref) -> running the
+# dataset map with >1 worker crashes the subprocess. Single-process preprocessing avoids it.
+preprocessing_num_workers: 1
 
 ### output
 output_dir: /mnt/beegfs/amartinelli/finetune_out/phi4mm_lora_sft

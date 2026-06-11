@@ -11,9 +11,9 @@
 # Parallel-safe LoRA fine-tuning for one model per job.
 # Usage:
 #   sbatch run_finetune_vlm.sh <model_key> [smoke]
-#   <model_key> = qwen25vl | llama32vl | internvl35 | phi4mm
-# Run 3 in parallel (no collision):
-#   for M in llama32vl internvl35 phi4mm; do sbatch --job-name=ft-$M run_finetune_vlm.sh $M; done
+#   <model_key> = qwen25vl | internvl35 | phi4mm
+# Run them in parallel (no collision):
+#   for M in internvl35 phi4mm; do sbatch --job-name=ft-$M run_finetune_vlm.sh $M; done
 
 set -euo pipefail
 module purge
@@ -29,7 +29,7 @@ export UV_LINK_MODE=copy
 MODEL_KEY="${1:?usage: run_finetune_vlm.sh <model_key> [smoke]}"
 VARIANT="${2:-sft}"   # sft (full) | smoke
 case "$MODEL_KEY" in
-  qwen25vl|llama32vl|internvl35|phi4mm) : ;;
+  qwen25vl|internvl35|phi4mm) : ;;
   *) echo "ERROR: unknown model_key '$MODEL_KEY'"; exit 2 ;;
 esac
 CONFIG_NAME="${MODEL_KEY}_lora_${VARIANT}.yaml"

@@ -14,7 +14,7 @@ Output PNG lands next to the log file.
 
 --- Multi-model LoRA fine-tuning (parallel, one model per job) ---
 Run all three in parallel (no collision; each uses its own scratch dir + venv + HF cache):
-    for M in llama32vl internvl35 phi4mm; do
+    for M in internvl35 phi4mm; do
         sbatch --job-name=ft-$M scripts/slurm/run_finetune_vlm.sh $M
     done
 Smoke first (fast config check): append 'smoke' ->  run_finetune_vlm.sh <M> smoke

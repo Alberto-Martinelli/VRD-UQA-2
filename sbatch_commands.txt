@@ -9,8 +9,8 @@ sbatch --job-name=SlideVQA VRD-UQA/run_pipeline.sh SlideVQA val 300
 sbatch --job-name=BDocs    VRD-UQA/run_pipeline.sh BDocs    val 300
 
 # --- Multi-model eval (one model x dataset x split per job; runs in parallel) ---
-# sbatch run_vqa_analysis.sh <model> <dataset> <split>   model = qwen2.5|llama|phi4|internvl
-for M in qwen2.5 llama phi4 internvl; do
+# sbatch run_vqa_analysis.sh <model> <dataset> <split>   model = qwen2.5|phi4|internvl
+for M in qwen2.5 phi4 internvl; do
   sbatch --job-name=vqa-$M scripts/slurm/run_vqa_analysis.sh $M BDocs val_100
 done
 # After the jobs finish, build a comparison table across the private runs:
@@ -20,9 +20,9 @@ uv run python VQA_analysis/metrics/4_aggregate_summaries.py --tag bdocs_val100 -
 sbatch scripts/slurm/build_dataset.sh
 
 # --- LoRA fine-tuning the 3 new models in parallel ---
-for M in llama32vl internvl35 phi4mm; do
+for M in internvl35 phi4mm; do
   sbatch --job-name=ft-$M scripts/slurm/run_finetune_vlm.sh $M
 done
 # Then evaluate fine-tuned models (Phase A launcher + FINETUNE flag):
 #   FINETUNE=--finetuned CONFIG=VQA_analysis/config_zeroshot.json \
-#     sbatch scripts/slurm/run_vqa_analysis.sh llama BDocs val_100
+#     sbatch scripts/slurm/run_vqa_analysis.sh phi4 BDocs val_100

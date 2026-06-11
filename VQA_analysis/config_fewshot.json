@@ -28,13 +28,6 @@
             "use_flash_attention": true,
             "name": "Qwen3VL"
         },
-        "llama3.2": {
-            "model_name": "meta-llama/Llama-3.2-11B-Vision-Instruct",
-            "batch_size": 1,
-            "max_tokens": 1024,
-            "use_flash_attention": false,
-            "name": "Llama3.2-11B"
-        },
         "phi4": {
             "model_name": "microsoft/Phi-4-multimodal-instruct",
             "batch_size": 1,
@@ -50,14 +43,6 @@
             "input_size": 448,
             "use_flash_attention": true,
             "name": "InternVL3.5-8B"
-        },
-        "llama3.2_finetuned": {
-            "model_name": "meta-llama/Llama-3.2-11B-Vision-Instruct",
-            "adapter_path": "/home/amartinelli/VRD-UQA/artifacts/finetuning/llama32vl_lora_sft",
-            "batch_size": 1,
-            "max_tokens": 1024,
-            "use_flash_attention": true,
-            "name": "Llama3.2-11B_finetuned"
         },
         "phi4_finetuned": {
             "model_name": "microsoft/Phi-4-multimodal-instruct",
