@@ -84,8 +84,12 @@ def run_dir(run_id: str) -> Path:
     return EVAL_RUNS_DIR / run_id
 
 
-def leaf_dir(run_id: str, dataset: str, slug: str) -> Path:
-    return run_dir(run_id) / dataset / slug
+def leaf_dir(run_id: str, dataset: str, slug: str, model_prefix: str = "") -> Path:
+    # model_prefix lets >1 model share a run without colliding on one leaf.
+    # "" preserves the historical bare path (Qwen), so existing artifacts and
+    # in-flight k-sweep resume are undisturbed.
+    name = f"{model_prefix}__{slug}" if model_prefix else slug
+    return run_dir(run_id) / dataset / name
 
 
 def write_manifest(path: Path, data: dict) -> None:
