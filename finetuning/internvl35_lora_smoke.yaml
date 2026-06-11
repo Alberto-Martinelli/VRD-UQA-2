@@ -1,6 +1,6 @@
 # LLaMA-Factory smoke test: InternVL3.5-8B LoRA (fast config check)
 ### model
-model_name_or_path: OpenGVLab/InternVL3_5-8B
+model_name_or_path: OpenGVLab/InternVL3_5-8B-HF
 trust_remote_code: true
 
 ### method

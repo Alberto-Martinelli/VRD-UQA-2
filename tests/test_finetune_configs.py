@@ -6,7 +6,7 @@ from config.paths import REPO_ROOT
 FT = REPO_ROOT / "finetuning"
 NEW_FULL = ["internvl35_lora_sft.yaml", "phi4mm_lora_sft.yaml"]
 EXPECTED = {  # (model_name_or_path, template, output_dir basename)
-    "internvl35_lora_sft.yaml": ("OpenGVLab/InternVL3_5-8B", "intern_vl", "internvl35_lora_sft"),
+    "internvl35_lora_sft.yaml": ("OpenGVLab/InternVL3_5-8B-HF", "intern_vl", "internvl35_lora_sft"),
     "phi4mm_lora_sft.yaml": ("microsoft/Phi-4-multimodal-instruct", "phi4", "phi4mm_lora_sft"),
 }
 # Verbatim-from-Qwen comparison hyperparameters

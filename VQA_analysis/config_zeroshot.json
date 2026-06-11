@@ -36,7 +36,7 @@
             "name": "Phi4-multimodal"
         },
         "internvl3_5": {
-            "model_name": "OpenGVLab/InternVL3_5-8B",
+            "model_name": "OpenGVLab/InternVL3_5-8B-HF",
             "batch_size": 1,
             "max_tokens": 1024,
             "max_tiles": 12,
@@ -53,7 +53,7 @@
             "name": "Phi4-multimodal_finetuned"
         },
         "internvl3_5_finetuned": {
-            "model_name": "OpenGVLab/InternVL3_5-8B",
+            "model_name": "OpenGVLab/InternVL3_5-8B-HF",
             "adapter_path": "/home/amartinelli/VRD-UQA/artifacts/finetuning/internvl35_lora_sft",
             "batch_size": 1,
             "max_tokens": 1024,

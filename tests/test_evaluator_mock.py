@@ -99,4 +99,4 @@ if __name__ == "__main__":
     test_all_models_dual_answer_and_namespaced_leaf()
     test_corrupted_only_omits_clean_qwen()
     test_resume_skips_completed_leaf_qwen()
-    print("OK: evaluator mock dual-answer (all 4 models)")
+    print("OK: evaluator mock dual-answer (all 3 models)")

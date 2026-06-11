@@ -2,7 +2,10 @@
 # Hyperparameters identical to qwen25vl_lora_sft.yaml; only model/template/output_dir differ.
 # dataset_dir is overridden per job by run_finetune_vlm.sh.
 ### model
-model_name_or_path: OpenGVLab/InternVL3_5-8B
+# HF-native InternVL3.5 (ships AutoProcessor + chat_template) so LLaMA-Factory's intern_vl
+# template can load it. The non-HF repo (custom model.chat code) makes LF raise
+# "Processor was not found". Eval uses the same -HF base for train/eval consistency.
+model_name_or_path: OpenGVLab/InternVL3_5-8B-HF
 trust_remote_code: true
 
 ### method
