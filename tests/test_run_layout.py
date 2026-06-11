@@ -1,7 +1,6 @@
 """Validates config/run_layout.py. Run: uv run python -m tests.test_run_layout"""
 import contextlib
 import datetime
-import json
 import tempfile
 from pathlib import Path
 from config import run_layout as rl
@@ -35,6 +34,15 @@ def test_build_slug():
     assert rl.build_slug("finetuned", ocr_enabled=True, window_size=1) == "finetuned_ocr"
     assert rl.build_slug("zeroshot", ocr_enabled=False, window_size=1) == "zeroshot_noocr"
     assert rl.build_slug("fewshot", ocr_enabled=True, window_size=2) == "fewshot_ocr_w2"
+    # few_shot param encodes k / shot_type / selection into the slug
+    fs_rand = {"enabled": True, "n_shots": 2, "shot_type": "mixed", "selection": "random"}
+    assert rl.build_slug("fewshot", ocr_enabled=True, window_size=1, few_shot=fs_rand) == "fewshot_ocr_k2_mixed_random"
+    fs_spec = {"enabled": True, "n_shots": 4, "shot_type": "mixed", "selection": "specific"}
+    assert rl.build_slug("fewshot", ocr_enabled=True, window_size=1, few_shot=fs_spec) == "fewshot_ocr_k4_mixed_specific"
+    # Non-fewshot modes ignore the few_shot arg
+    assert rl.build_slug("zeroshot", ocr_enabled=True, window_size=1, few_shot=fs_rand) == "zeroshot_ocr"
+    # Disabled few_shot block produces no suffix
+    assert rl.build_slug("fewshot", ocr_enabled=True, window_size=1, few_shot={"enabled": False}) == "fewshot_ocr"
 
 
 def test_human_label():
@@ -44,6 +52,19 @@ def test_human_label():
     assert rl.human_label(m2) == "Zero-Shot · no-OCR"
     # Unknown / missing mode falls back to "?".
     assert rl.human_label({}) == "? · no-OCR"
+    # Few-shot manifests include k and selection in the label
+    m3 = {
+        "config": "fewshot_ocr_k2_mixed_specific",
+        "ocr_enabled": True, "window_size": 1,
+        "few_shot": {"enabled": True, "n_shots": 2, "shot_type": "mixed", "selection": "specific"},
+    }
+    assert rl.human_label(m3) == "Few-Shot · OCR · k2-specific"
+    m4 = {
+        "config": "fewshot_ocr_k4_mixed_random",
+        "ocr_enabled": True, "window_size": 1,
+        "few_shot": {"enabled": True, "n_shots": 4, "shot_type": "mixed", "selection": "random"},
+    }
+    assert rl.human_label(m4) == "Few-Shot · OCR · k4-random"
 
 
 def test_paths_and_manifest_roundtrip():

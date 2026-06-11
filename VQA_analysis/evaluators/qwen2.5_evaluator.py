@@ -320,10 +320,12 @@ class QwenVQAEvaluator:
         """Return (run_id, slug, leaf_dir) for this dataset/config. Shared by the
         resume check and the result writer so they always agree on the path.
         rl.EVAL_RUNS_DIR already honors VQA_EVAL_RUNS_DIR (read at import)."""
-        few_shot_enabled = self.config.get("few_shot", {}).get("enabled", False)
+        few_shot_cfg = self.config.get("few_shot", {})
+        few_shot_enabled = few_shot_cfg.get("enabled", False)
         mode = rl.derive_mode(self.finetuned, few_shot_enabled)
         slug = rl.build_slug(mode, bool(self.config.get("ocr_enabled", False)),
-                             self.model_config.get("batch_size", 1))
+                             self.model_config.get("batch_size", 1),
+                             few_shot=few_shot_cfg if few_shot_enabled else None)
         run_id = os.environ.get("VQA_RUN_ID") or rl.make_run_id(
             self.config.get("split", "val"), n_items
         )
@@ -381,21 +383,51 @@ class QwenVQAEvaluator:
         rl.write_manifest(leaf / "manifest.json", manifest)
         print(f"Manifest saved to {leaf / 'manifest.json'}")
 
+    def _get_fs_pool(self, dataset_pool: list) -> list:
+        """Return the few-shot candidate pool, loading from pool_file once if configured."""
+        pool_file = self.config.get("few_shot", {}).get("pool_file", "")
+        if not pool_file:
+            return list(dataset_pool)
+        if not hasattr(self, "_fs_pool_cache"):
+            if os.path.exists(pool_file):
+                with open(pool_file) as f:
+                    data = json.load(f)
+                self._fs_pool_cache = data.get("corrupted_questions", [])
+                print(f"Few-shot pool loaded from {pool_file}: {len(self._fs_pool_cache)} items")
+            else:
+                print(f"WARNING: pool_file {pool_file!r} not found; falling back to eval pool.")
+                self._fs_pool_cache = list(dataset_pool)
+        return self._fs_pool_cache
+
+    def _fs_specific_score(self, candidate: dict, current: dict) -> tuple:
+        """Score a candidate for 'specific' selection: (complexity_match, entity_type_jaccard).
+        Sorted descending so exact-complexity + highest entity overlap ranks first."""
+        et_c = set(candidate.get("entity_type") or [])
+        et_q = set(current.get("entity_type") or [])
+        union = et_c | et_q
+        jacc = len(et_c & et_q) / len(union) if union else 0.0
+        same_cx = 1.0 if candidate.get("complexity") == current.get("complexity") else 0.0
+        return (same_cx, jacc)
+
     def _select_few_shot_examples(self, dataset_pool, current_item):
-        """Selects N distinct few-shot demonstrations based on configured shot_type."""
+        """Select N distinct few-shot demonstrations based on shot_type and selection strategy."""
         few_shot_config = self.config.get("few_shot", {})
         if not few_shot_config.get("enabled", False):
             return []
 
         n_shots = few_shot_config.get("n_shots", 2)
         shot_type = few_shot_config.get("shot_type", "mixed")
+        selection = few_shot_config.get("selection", "random")
 
-        # Exclude the current item to prevent data leakage
-        pool = [item for item in dataset_pool if item != current_item]
+        # Resolve pool: use pool_file (train set) if configured, else fall back to eval pool
+        pool = self._get_fs_pool(dataset_pool)
+        if not few_shot_config.get("pool_file"):
+            # Using the eval pool: exclude current item to prevent leakage
+            pool = [item for item in pool if item != current_item]
         if not pool:
             return []
 
-        # Filter out candidates whose image files are missing on disk
+        # Drop candidates with missing images
         valid_pool = []
         for item in pool:
             pages = item.get("layout_analysis", {}).get("pages", {})
@@ -412,29 +444,26 @@ class QwenVQAEvaluator:
             print("WARNING: no few-shot candidates have valid image paths; skipping few-shot.")
             return []
 
+        # Pick n_shots candidates according to selection strategy
+        n_select = min(n_shots, len(pool))
+        if selection == "specific":
+            # Rank by (complexity_match, entity_type_jaccard); stable sort for determinism
+            scored = sorted(pool, key=lambda c: self._fs_specific_score(c, current_item), reverse=True)
+            sampled = scored[:n_select]
+        else:
+            sampled = random.sample(pool, n_select)
+
+        # Assign answerable / unanswerable roles
         if shot_type == "answerable":
-            selected = random.sample(pool, min(n_shots, len(pool)))
-            return [{"type": "answerable", "item": s} for s in selected]
-
-        elif shot_type == "unanswerable":
-            selected = random.sample(pool, min(n_shots, len(pool)))
-            return [{"type": "unanswerable", "item": s} for s in selected]
-
-        elif shot_type == "mixed":
-            n_ans = n_shots // 2
-            n_unans = n_shots - n_ans
-
-            # Sample without replacement across both roles to avoid using the same item twice
-            sampled = random.sample(pool, min(n_shots, len(pool)))
-            ans_selected = sampled[:n_ans]
-            unans_selected = sampled[n_ans:n_ans + n_unans]
-
-            shots = [{"type": "answerable", "item": s} for s in ans_selected]
-            shots.extend([{"type": "unanswerable", "item": s} for s in unans_selected])
-            random.shuffle(shots)
-            return shots
-
-        return []
+            return [{"type": "answerable", "item": s} for s in sampled]
+        if shot_type == "unanswerable":
+            return [{"type": "unanswerable", "item": s} for s in sampled]
+        # mixed: first half answerable, second half unanswerable (n_shots//2 each)
+        n_ans = n_shots // 2
+        shots = [{"type": "answerable", "item": s} for s in sampled[:n_ans]]
+        shots.extend([{"type": "unanswerable", "item": s} for s in sampled[n_ans:]])
+        random.shuffle(shots)
+        return shots
 
     def _build_few_shot_turns(self, shots):
         """Constructs conversational message turns for few-shot visual prompts."""

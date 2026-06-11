@@ -53,6 +53,8 @@
     "few_shot": {
         "enabled": true,
         "n_shots": 2,
-        "shot_type": "mixed"
+        "shot_type": "mixed",
+        "selection": "random",
+        "pool_file": ""
     }
 }
