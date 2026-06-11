@@ -1,134 +1,118 @@
 #!/usr/bin/env bash
-#SBATCH -N 1 # one compute node for the job
-#SBATCH --ntasks=1 # one process
-#SBATCH --cpus-per-task=4 # 4 cores per process
-#SBATCH --mem=32G # RAM memory
-#SBATCH --time=0-20:00:00 # max wall time (D-HH:MM:SS). Dual-pass (QUR+FRR) val_300 x 4 can exceed 12h; results sync back per-dataset and a timed-out run is resumable (resubmit with the same VQA_RUN_ID). Override with `sbatch --time=...`
-#SBATCH --partition=gpu_a40 # partition name
-#SBATCH --gres=gpu:1 # 1 GPU
-#SBATCH --output=slurm-VQA_analysis-%j.out # output file name
+#SBATCH -N 1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=0-12:00:00
+#SBATCH --partition=gpu_a40
+#SBATCH --gres=gpu:1
+#SBATCH --output=slurm-VQA_analysis-%j.out
 
-# Usage (one job evaluates every requested dataset sequentially):
-#   sbatch run_vqa_analysis.sh                      # all 4 datasets, full eval (val_300)
-#   sbatch run_vqa_analysis.sh val_5                # all 4 datasets, smoke test (val_5)
-#   sbatch run_vqa_analysis.sh val_300 DUDE BDocs   # specific datasets, full eval
+# One model x one dataset x one split per job, so jobs run in parallel safely.
+# Usage:
+#   sbatch run_vqa_analysis.sh <model> <dataset> <split>
+#   e.g. sbatch run_vqa_analysis.sh llama BDocs val_100
 #
-#   Arg 1   = split folder suffix (val_300 | val_5 | ...). Default: val_300.
-#   Args 2+ = dataset names.       Default: BDocs DUDE MPDocVQA SlideVQA.
+#   <model>   = qwen2.5 | llama | phi4 | internvl
+#   <dataset> = BDocs | DUDE | MPDocVQA | SlideVQA
+#   <split>   = val_300 | val_100 | val_5 | ...
+#
+# Each job derives a deterministic, unique run_id eval_<split>_<n>_<model>_<dataset>,
+# so parallel jobs never share a run dir (no sync/metrics collision). Resubmitting
+# the same combo RESUMES. Set RUN_TAG=foo to force a distinct fresh run.
 
+set -uo pipefail
 START_TIME=$SECONDS
 echo "Job started at: $(date)"
 
-module purge
+MODEL="${1:?usage: run_vqa_analysis.sh <model> <dataset> <split>}"
+DATASET="${2:?usage: run_vqa_analysis.sh <model> <dataset> <split>}"
+SPLIT="${3:-val_300}"
+N="${SPLIT##*_}"
+SPLIT_NAME="${SPLIT%_*}"
+RUN_TAG="${RUN_TAG:-}"
 
-# Inspect available modules first with: module avail
+# Map model key -> evaluator entrypoint. --finetuned only when an adapter exists
+# for that model (Phase B wires the *_finetuned config entries + FINETUNE flag).
+case "$MODEL" in
+  qwen2.5)  ENTRY="VQA_analysis/evaluators/qwen2.5_evaluator.py" ;;
+  llama)    ENTRY="VQA_analysis/evaluators/llama_evaluator.py" ;;
+  phi4)     ENTRY="VQA_analysis/evaluators/phi4_evaluator.py" ;;
+  internvl) ENTRY="VQA_analysis/evaluators/internvl_evaluator.py" ;;
+  *) echo "ERROR: unknown model '$MODEL'"; exit 2 ;;
+esac
+
+# Eval condition is config-driven. Default: few-shot config, no --finetuned for the
+# new models (no adapter yet). Override CONFIG / FINETUNE via env when needed.
+CONFIG="${CONFIG:-VQA_analysis/config_fewshot.json}"
+FINETUNE="${FINETUNE:-}"   # set FINETUNE=--finetuned to use a *_finetuned entry
+
+module purge
 module load miniconda3/3.13.25
 module load nvhpc/25.1
-
 source "$HOME/VRD-UQA/scripts/env.sh"
 
-# ---- Args: split + dataset list (parsed early so the run id + paths are known
-#      before the cleanup trap is installed) ----
-SPLIT="${1:-val_300}"          # which corrupted set to evaluate: val_300 (full) or val_5 (smoke test)
-shift || true
-DATASETS=("$@")                # optional explicit list; empty -> all four
-if [ ${#DATASETS[@]} -eq 0 ]; then
-    DATASETS=(BDocs DUDE MPDocVQA SlideVQA)
-fi
-N="${SPLIT##*_}"                       # e.g. val_300 -> 300
-SPLIT_NAME="${SPLIT%_*}"               # e.g. val_300 -> val
-# Honor an externally-set VQA_RUN_ID: resubmit with the SAME id to RESUME a
-# timed-out run (finished datasets are skipped). Otherwise mint a fresh id.
-export VQA_RUN_ID="${VQA_RUN_ID:-eval_${SPLIT_NAME}_${N}_$(date +%Y%m%d_%H%M%S)}"
-echo "Split: $SPLIT | Datasets: ${DATASETS[*]} | Run id: $VQA_RUN_ID"
+export VQA_RUN_ID="${VQA_RUN_ID:-eval_${SPLIT_NAME}_${N}_${MODEL}_${DATASET}${RUN_TAG:+_$RUN_TAG}}"
+echo "Model: $MODEL | Dataset: $DATASET | Split: $SPLIT | Run id: $VQA_RUN_ID"
 
 WORK_DIR=$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}
 SRC_RUN="$WORK_DIR/artifacts/evaluation_runs/$VQA_RUN_ID"
 DEST_RUN="$HOME/VRD-UQA/artifacts/evaluation_runs/$VQA_RUN_ID"
 
-# Mirror finished results from scratch -> $HOME. Called after every dataset AND
-# from the exit trap, so a timeout/cancel never loses completed datasets
-# (predictions.json is written only when a dataset fully finishes).
 sync_back() {
     [ -d "$SRC_RUN" ] || return 0
     mkdir -p "$DEST_RUN"
     rsync -aq "$SRC_RUN/" "$DEST_RUN/" || true
-    ln -sfn "$VQA_RUN_ID" "$HOME/VRD-UQA/artifacts/evaluation_runs/latest" 2>/dev/null || true
+    # 'latest' is a global pointer; updating it from parallel jobs is a harmless
+    # last-writer-wins race. Opt out with NO_LATEST=1 to avoid churn.
+    [ -n "${NO_LATEST:-}" ] || ln -sfn "$VQA_RUN_ID" "$HOME/VRD-UQA/artifacts/evaluation_runs/latest" 2>/dev/null || true
 }
-
-# On ANY exit (success/error/timeout/scancel): secure results FIRST, then reclaim
-# the per-job scratch dir so SCRATCH_FLASH doesn't accumulate full repo copies.
 trap 'sync_back; cd "$HOME"; rm -rf "$WORK_DIR"' EXIT
 
 rm -rf "$WORK_DIR"
-rsync -aq --exclude='data' --exclude='.git' --exclude='.venv' --exclude='corruption-scripts/results' --exclude='finetuning' "$HOME/VRD-UQA/" "$WORK_DIR/"
+rsync -aq --exclude='data' --exclude='.git' --exclude='.venv' \
+      --exclude='corruption-scripts/results' --exclude='finetuning' \
+      "$HOME/VRD-UQA/" "$WORK_DIR/"
 cd "$WORK_DIR"
-
 uv --version
 export UV_LINK_MODE=copy
 uv sync -qq
 
-# ---- Resume: restore any already-computed leaves for this run id from $HOME so
-#      the evaluator skips finished datasets. ----
+# Resume: restore an already-computed run for this id from $HOME into scratch.
 if [ -d "$DEST_RUN" ]; then
-    echo "RESUME: prior results found at $DEST_RUN — restoring into scratch; finished datasets will be skipped."
+    echo "RESUME: prior results at $DEST_RUN — restoring into scratch; finished leaf will be skipped."
     mkdir -p "$SRC_RUN"
     rsync -aq "$DEST_RUN/" "$SRC_RUN/"
 fi
 
-ZS_CONFIG="VQA_analysis/config_zeroshot.json"
-FS_CONFIG="VQA_analysis/config_fewshot.json"
-export VQA_CONFIG_PATH="$FS_CONFIG"
+export VQA_CONFIG_PATH="$CONFIG"
 
-# ---- Evaluate each dataset (QUR+FRR in one pass via --questions both) ----
-for D in "${DATASETS[@]}"; do
-    printf "\n\n########## DATASET: %s  (split=%s) ##########\n" "$D" "$SPLIT"
-    uv run python -c "
+# Point the chosen config at this dataset/split's corrupted set.
+uv run python -c "
 import json, sys
-dataset, split = sys.argv[1], sys.argv[2]
+dataset, split, cfg_path = sys.argv[1], sys.argv[2], sys.argv[3]
 input_file = f'/home/amartinelli/VRD-UQA/data/{dataset}/{dataset}_{split}/{dataset}_unanswerable_corrupted_questions_just_false.json'
-for path in ['VQA_analysis/config_zeroshot.json', 'VQA_analysis/config_fewshot.json']:
-    cfg = json.load(open(path))
-    cfg['dataset'] = dataset
-    cfg['split'] = split.split('_')[0]
-    cfg['input_file'] = input_file
-    json.dump(cfg, open(path, 'w'), indent=4)
-" "$D" "$SPLIT"
+cfg = json.load(open(cfg_path))
+cfg['dataset'] = dataset
+cfg['split'] = split.split('_')[0]
+cfg['input_file'] = input_file
+json.dump(cfg, open(cfg_path, 'w'), indent=4)
+" "$DATASET" "$SPLIT" "$CONFIG"
 
-    printf "\n=== QWEN2.5 — FEW-SHOT FINETUNED — QUR+FRR — %s ===\n" "$D"
-    uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py --config_path "$FS_CONFIG" --finetuned --questions both
-    sync_back          # secure this dataset's results immediately (timeout-safe)
-done
+printf '\n=== %s — %s — QUR+FRR — %s ===\n' "$MODEL" "$CONFIG" "$DATASET"
+uv run python "$ENTRY" --config_path "$CONFIG" $FINETUNE --questions both
+sync_back
 
-# ---- Metrics (all operate on $VQA_RUN_ID) ----
+# Metrics — scoped to THIS run_id only (private tree => no cross-job collision).
 uv run python VQA_analysis/metrics/1_normalize_unanswerable_responses.py --run-id "$VQA_RUN_ID"
 uv run python VQA_analysis/metrics/2_enrich_metadata.py            --run-id "$VQA_RUN_ID"
 uv run python VQA_analysis/metrics/3_compute_metrics.py            --run-id "$VQA_RUN_ID"
 
-# ---- Run manifest (written into the scratch run dir; synced back below) ----
-uv run python -c "
-import json
-from config import run_layout as rl
-run_id = '$VQA_RUN_ID'
-datasets = '${DATASETS[*]}'.split()
-run = rl.run_dir(run_id)
-configs = sorted({leaf.name for ds in datasets for leaf in (run / ds).glob('*') if leaf.is_dir()}) if run.exists() else []
-rl.write_manifest(run / 'run_manifest.json', {
-    'run_id': run_id, 'created_at': rl.utc_now_iso(),
-    'git_commit': rl.git_commit(), 'git_dirty': rl.git_dirty(),
-    'split': '${SPLIT_NAME}', 'n': int('${N}'), 'seed': 42,
-    'datasets': datasets, 'configs': configs,
-})
-print('Wrote run_manifest ->', run_id)
-"
+# Per-job slurm log move — scoped to THIS job id (never grab sibling jobs' logs).
+mv "$HOME"/slurm-VQA_analysis-${SLURM_JOB_ID}.out "$HOME/VRD-UQA/" 2>/dev/null || true
 
-mv $HOME/slurm* $HOME/VRD-UQA/ 2>/dev/null || true
-
-# Final sync (the exit trap will also run this, then reclaim scratch).
 sync_back
 echo "Results synced to $DEST_RUN"
-
-
 ELAPSED=$(( SECONDS - START_TIME ))
 printf 'Job finished at: %s\nTotal execution time: %02d:%02d:%02d (%ds)\n' \
     "$(date)" $((ELAPSED/3600)) $(((ELAPSED%3600)/60)) $((ELAPSED%60)) "$ELAPSED"
