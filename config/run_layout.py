@@ -51,10 +51,16 @@ def derive_mode(finetuned: bool, few_shot_enabled: bool) -> str:
     return "zeroshot"
 
 
-def build_slug(mode: str, ocr_enabled: bool, window_size: int = 1) -> str:
+def build_slug(mode: str, ocr_enabled: bool, window_size: int = 1,
+               few_shot: dict | None = None) -> str:
     slug = f"{mode}_ocr" if ocr_enabled else f"{mode}_noocr"
     if window_size and window_size != 1:
         slug += f"_w{window_size}"
+    if mode == "fewshot" and few_shot and few_shot.get("enabled"):
+        k = few_shot.get("n_shots", 0)
+        shot_type = few_shot.get("shot_type", "mixed")
+        selection = few_shot.get("selection", "random")
+        slug += f"_k{k}_{shot_type}_{selection}"
     return slug
 
 
@@ -65,6 +71,12 @@ def human_label(manifest: dict) -> str:
     w = manifest.get("window_size", 1)
     if w and w != 1:
         label += f" · w{w}"
+    if mode == "fewshot":
+        fs = manifest.get("few_shot") or {}
+        if fs.get("enabled"):
+            k = fs.get("n_shots", 0)
+            sel = fs.get("selection", "random")
+            label += f" · k{k}-{sel}"
     return label
 
 
