@@ -20,6 +20,10 @@ module purge
 module load miniconda3/3.13.25
 module load nvhpc/25.1
 source "$HOME/VRD-UQA/scripts/env.sh"
+# HF auth for gated / rate-limited model downloads (e.g. Llama-3.2 is gated).
+if [ -f "$HOME/.hf_token" ]; then
+    export HF_TOKEN="$(cat "$HOME/.hf_token")"
+fi
 export UV_LINK_MODE=copy
 
 MODEL_KEY="${1:?usage: run_finetune_vlm.sh <model_key> [smoke]}"
@@ -41,6 +45,7 @@ trap 'cd "$HOME"; rm -rf "$WORK_DIR"' EXIT
 # ---- Sync repo (for finetuning configs + dataset registration) ----
 rsync -aq --exclude='.git' --exclude='.venv' --exclude='data' \
       --exclude='corruption-scripts/results' \
+      --exclude='artifacts/evaluation_runs' --exclude='artifacts/evaluation_archive' \
       "$HOME/VRD-UQA/" "$WORK_DIR/VRD-UQA/"
 
 # ---- Clone LLaMA-Factory (per job) ----

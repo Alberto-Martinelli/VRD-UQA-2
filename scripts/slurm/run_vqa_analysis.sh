@@ -51,6 +51,10 @@ module purge
 module load miniconda3/3.13.25
 module load nvhpc/25.1
 source "$HOME/VRD-UQA/scripts/env.sh"
+# HF auth for gated / rate-limited model downloads (e.g. Llama-3.2 is gated).
+if [ -f "$HOME/.hf_token" ]; then
+    export HF_TOKEN="$(cat "$HOME/.hf_token")"
+fi
 
 export VQA_RUN_ID="${VQA_RUN_ID:-eval_${SPLIT_NAME}_${N}_${MODEL}_${DATASET}${RUN_TAG:+_$RUN_TAG}}"
 echo "Model: $MODEL | Dataset: $DATASET | Split: $SPLIT | Run id: $VQA_RUN_ID"
