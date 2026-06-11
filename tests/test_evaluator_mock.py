@@ -67,7 +67,28 @@ def test_questions_corrupted_only_omits_clean():
     assert "answer_corrupted" in item0 and "answer_clean" not in item0
 
 
+def test_resume_skips_completed_leaf():
+    tmp = tempfile.mkdtemp()
+    run_root = Path(tmp) / "runs"
+    cfg = _write_mock_config(tmp)
+    run_id = "eval_val_15_20260101_000002"
+    _run(cfg, run_id, "both", run_root)
+    preds = run_root / run_id / "BDocs" / "finetuned_noocr" / "predictions.json"
+
+    # Tamper with the file; a resumed (same run_id) run must NOT overwrite it.
+    with open(preds) as f:
+        d = json.load(f)
+    d["_resume_marker"] = True
+    with open(preds, "w") as f:
+        json.dump(d, f)
+
+    _run(cfg, run_id, "both", run_root)  # second pass -> should skip
+    with open(preds) as f:
+        assert json.load(f).get("_resume_marker") is True  # untouched => skipped
+
+
 if __name__ == "__main__":
     test_dual_answer_predictions_and_manifest()
     test_questions_corrupted_only_omits_clean()
+    test_resume_skips_completed_leaf()
     print("OK: evaluator mock dual-answer")

@@ -316,22 +316,28 @@ class QwenVQAEvaluator:
                 "traceback": traceback.format_exc(),
             }
 
-    def _save_results(self, data):
+    def _resolve_leaf(self, n_items):
+        """Return (run_id, slug, leaf_dir) for this dataset/config. Shared by the
+        resume check and the result writer so they always agree on the path.
+        rl.EVAL_RUNS_DIR already honors VQA_EVAL_RUNS_DIR (read at import)."""
         few_shot_enabled = self.config.get("few_shot", {}).get("enabled", False)
         mode = rl.derive_mode(self.finetuned, few_shot_enabled)
-        ocr_enabled = bool(self.config.get("ocr_enabled", False))
-        window_size = self.model_config.get("batch_size", 1)
-        slug = rl.build_slug(mode, ocr_enabled, window_size)
+        slug = rl.build_slug(mode, bool(self.config.get("ocr_enabled", False)),
+                             self.model_config.get("batch_size", 1))
+        run_id = os.environ.get("VQA_RUN_ID") or rl.make_run_id(
+            self.config.get("split", "val"), n_items
+        )
+        return run_id, slug, rl.leaf_dir(run_id, self.config["dataset"], slug)
+
+    def _save_results(self, data):
+        n_items = len(data.get("corrupted_questions", []))
+        run_id, slug, leaf = self._resolve_leaf(n_items)
+        leaf.mkdir(parents=True, exist_ok=True)
 
         dataset = self.config["dataset"]
         split = self.config.get("split", "val")
-        n_items = len(data.get("corrupted_questions", []))
-        run_id = os.environ.get("VQA_RUN_ID") or rl.make_run_id(split, n_items)
-
-        # rl.EVAL_RUNS_DIR already honors VQA_EVAL_RUNS_DIR (read at import), so
-        # tests/orchestration can redirect the runs root without extra wiring here.
-        leaf = rl.leaf_dir(run_id, dataset, slug)
-        leaf.mkdir(parents=True, exist_ok=True)
+        ocr_enabled = bool(self.config.get("ocr_enabled", False))
+        window_size = self.model_config.get("batch_size", 1)
 
         predictions_path = leaf / "predictions.json"
         try:
@@ -576,6 +582,15 @@ class QwenVQAEvaluator:
             with open(self.config["input_file"]) as f:
                 data = json.load(f)
                 print(f"Successfully loaded input file: {self.config['input_file']}")
+
+            # Resume: if this dataset/config already has predictions for the run,
+            # skip it (idempotent re-runs; lets a timed-out job be resubmitted
+            # with the same VQA_RUN_ID and only finish what's missing).
+            _, slug, leaf = self._resolve_leaf(len(data["corrupted_questions"]))
+            if (leaf / "predictions.json").exists():
+                print(f"RESUME: {leaf / 'predictions.json'} already exists — "
+                      f"skipping {self.config['dataset']}/{slug}.")
+                return
 
             # Sample questions
             total_questions = len(data["corrupted_questions"])
