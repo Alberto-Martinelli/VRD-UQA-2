@@ -22,8 +22,11 @@ The InternVL load path is the one already proven by the answerability judge
 ## Non-goals
 
 - No retraining of Qwen2.5-VL (its adapter already exists; it is the template).
-- No new datasets, corruption types, or metrics. Output schema is unchanged so the
-  existing metrics steps (1–3) consume new models with no changes beyond leaf discovery.
+- No new datasets, corruption types, or **metric definitions**. The prediction/manifest
+  schema is unchanged, so the existing metrics steps (1–3) consume the new models without
+  modification (leaf depth is unchanged; the model lives in the leaf *name*). The only
+  additive pipeline piece is a read-only cross-run **aggregator** (A.7) that reshapes
+  existing `summary.csv` rows — it computes no new metrics.
 - No quantization by default (all three models fit on the A40 48GB in bf16, run one at a
   time). QLoRA / bitsandbytes is a documented fallback only.
 
@@ -146,18 +149,59 @@ def leaf_dir(run_id, dataset, slug, model_prefix=""):
 *(Rejected alternative: prefix all four models for full path consistency — changes Qwen
 paths and restarts in-flight ksweep runs. Not worth the disruption.)*
 
-### A.5 Config + SLURM wiring
+### A.5 Config + parallel-safe SLURM orchestration
 
-- **Configs** ([config_zeroshot.json](../../../VQA_analysis/config_zeroshot.json),
-  [config_fewshot.json](../../../VQA_analysis/config_fewshot.json),
-  [config_mock.json](../../../VQA_analysis/config_mock.json)):
-  - confirm `llama3.2` → `meta-llama/Llama-3.2-11B-Vision-Instruct`, pin `batch_size: 1`
-  - confirm `phi4` → `microsoft/Phi-4-multimodal-instruct`
-  - add `internvl3_5` → `OpenGVLab/InternVL3_5-8B` (`name: "InternVL3.5-8B"`,
-    `batch_size: 1`, `max_tokens: 1024`, tiling params as needed)
-- **`run_vqa_analysis.sh`**: drive the evaluators from a small `MODELS` list mapping a
-  model key → entrypoint script. **Opt-in and conservatively defaulted** (do not auto-run
-  all 4 models × 4 datasets within the 20h wall-time). Exact matrix finalized in the plan.
+**Configs** ([config_zeroshot.json](../../../VQA_analysis/config_zeroshot.json),
+[config_fewshot.json](../../../VQA_analysis/config_fewshot.json),
+[config_mock.json](../../../VQA_analysis/config_mock.json)):
+
+- confirm `llama3.2` → `meta-llama/Llama-3.2-11B-Vision-Instruct`, pin `batch_size: 1`
+- confirm `phi4` → `microsoft/Phi-4-multimodal-instruct`
+- add `internvl3_5` → `OpenGVLab/InternVL3_5-8B` (`name: "InternVL3.5-8B"`,
+  `batch_size: 1`, `max_tokens: 1024`, tiling params as needed)
+
+**Launcher: parameterized, one model × one dataset × one split per job.** Refactor
+`run_vqa_analysis.sh` to take the three axes explicitly so each invocation is a single,
+self-contained, parallelizable unit:
+
+```bash
+sbatch --job-name=vqa-llama    run_vqa_analysis.sh llama    BDocs val_100
+sbatch --job-name=vqa-phi4     run_vqa_analysis.sh phi4     BDocs val_100
+sbatch --job-name=vqa-internvl run_vqa_analysis.sh internvl BDocs val_5
+#                                                   ^model   ^ds   ^split/N
+```
+
+- `<model_key>` ∈ `qwen2.5 | llama | phi4 | internvl`, mapped to the matching evaluator
+  entrypoint + `open_source_models` config key.
+- The evaluation **condition** (zeroshot / fewshot / finetuned, ±OCR) stays config-driven
+  exactly as today (config file + `--finetuned`); it can be exposed as an optional 4th
+  launcher arg. No auto-running of a full 4×4 grid in one 20h job — each cell is its own job.
+
+#### A.5.1 Parallel safety — one private `run_id` per job
+
+**Root cause of all collisions: parallel jobs sharing one `run_id` (one run directory).**
+The three metrics scripts write *only* under `run_dir(run_id)` (step 1/2 →
+`leaf/_cache/normalized.json`; step 3 → `leaf/metrics/*.csv` + appends the single
+`run_dir/summary.csv`, which `run_layout` documents as **single-writer-per-run**). So the
+fix is to give every job its **own** run_id; then eval output, all metrics writes, the
+`summary.csv`, and the sync-back destination are all in a private tree — collisions are
+structurally impossible with no locking.
+
+| Resource | Today (collision-prone if shared) | Parallel-safe design |
+|---|---|---|
+| `run_id` | `eval_<split>_<n>_<timestamp>`, one per job covering all datasets | **`eval_<split>_<n>_<model>_<dataset>`** — deterministic, unique per (model, dataset, N) |
+| Run dir + sync dest | shared `$HOME/.../evaluation_runs/<run_id>` | private per run_id ⇒ no sync overwrite |
+| Metrics (1/2/3) | run over shared tree; `rglob` sees siblings' partial `predictions.json`; concurrent `summary.csv` appends corrupt it | run scoped to the job's own run_id ⇒ private `_cache/`, `metrics/`, `summary.csv` |
+| Scratch `WORK_DIR` | `$SCRATCH_FLASH/VQA_analysis_${SLURM_JOB_ID}` (already per-job) | unchanged — already safe |
+| SLURM log move | `mv $HOME/slurm* …` (grabs sibling jobs' logs!) | `mv "$HOME"/slurm-VQA_analysis-${SLURM_JOB_ID}.out …` — scoped to this job |
+| `latest` symlink | every job races `ln -sfn latest` | harmless last-writer-wins; made **opt-out** in parallel mode |
+
+Determinism (no timestamp) means resubmitting the same `(model, dataset, N)` **resumes**
+(preserving the existing timeout-resume design) rather than duplicating; an optional
+`VQA_RUN_ID` / run-tag override forces a fresh run when wanted. Different N per model is
+fine — it is part of the run_id. The per-job run is single-model, so the model prefix in
+the leaf name (A.4) is redundant-but-harmless here; it is retained for layout uniformity
+and to keep the "several models in one run_id" mode (rejected for now) available later.
 
 ### A.6 Testing (Phase A)
 
@@ -169,9 +213,27 @@ to parametrize over all four entrypoints. Assert per evaluator:
 - manifest `model_name` matches the config `name`
 - new models write a **model-namespaced** leaf; Qwen still writes the bare leaf
 - resume skips a completed leaf
+- the aggregator (A.7) concatenates multiple per-run `summary.csv` fixtures into one
+  comparison table with the expected `model`/`dataset` rows (no GPU needed)
 
 Real-model `val_5` smoke runs (downloads + GPU) are run by the user on the HPC; the plan
 provides the exact commands.
+
+### A.7 Cross-run aggregator (comparison from independent runs)
+
+Because each parallel job writes a private run dir with its own `summary.csv`, a
+cross-model / cross-dataset comparison must be **assembled** from several runs. Add a
+read-only step `VQA_analysis/metrics/4_aggregate_summaries.py` that:
+
+- globs `artifacts/evaluation_runs/eval_*/summary.csv` (optionally filtered by a list of
+  run_ids, datasets, or a split/N),
+- concatenates them — every row already carries `dataset, config, label, model, metric,
+  complexity, value`, so no schema work is needed — and writes a combined
+  `artifacts/evaluation_runs/comparison_<tag>.csv` for the plotting notebook.
+
+It only **reads** the per-run trees and writes one new file outside them, so it has no
+collision surface and is run once after the parallel jobs finish. Honors
+`VQA_EVAL_RUNS_DIR` like the rest of the pipeline.
 
 ---
 
