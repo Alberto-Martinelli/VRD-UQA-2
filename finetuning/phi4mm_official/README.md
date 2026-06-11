@@ -1,24 +1,49 @@
-# Phi-4-multimodal fine-tuning — official-sample fallback
+# Phi-4-multimodal fine-tuning — official-sample fallback (ACTIVE)
 
-Use this path ONLY if `run_finetune_vlm.sh phi4mm smoke` (LLaMA-Factory, `phi4`
-template) fails to train Phi-4-multimodal's vision path. Phi-4-mm ships internal
-speech/vision LoRA adapters, which LLaMA-Factory may not handle.
+LLaMA-Factory **cannot** fine-tune Phi-4-multimodal's vision path: its `phi4` template
+is text-only and raises `ValueError: This model does not support image input` during
+dataset preprocessing (confirmed on job 1757561). So Phi-4-mm uses this dedicated path,
+adapted from Microsoft's official `sample_finetune_vision.py`.
 
-## Procedure
-1. Clone Microsoft's Phi-4-multimodal finetuning sample (from the model card /
-   `microsoft/Phi-4-multimodal-instruct` repo) into this directory.
-2. Convert `artifacts/finetuning/dataset/train.json` (+ `val.json`) — the same
-   model-agnostic VRD-UQA SFT data registered as `vrd_uqa_train`/`vrd_uqa_val` —
-   into the sample's expected format (image path + prompt + target).
-3. Train a LoRA on the language path (keep the vision adapter frozen), batch_size 1,
-   matching the LoRA rank/alpha/lr from `phi4mm_lora_sft.yaml` (16 / 32 / 2e-5) as
-   closely as the sample allows.
-4. Export the result so eval can consume it:
-   - If it produces a PEFT adapter → copy to `artifacts/finetuning/phi4mm_lora_sft`
-     and keep the eval `phi4_finetuned` entry as-is (adapter_path).
-   - Else merge with `finetuning/merge_lora.py` → set `phi4_finetuned.model_name`
-     to the merged dir and remove its `adapter_path`.
+## What this does
+- `finetune_phi4mm.py` — training script adapted from the MS sample. It trains the model's
+  **built-in `vision` LoRA** + the image projector (audio/speech path is stripped), on our
+  alpaca-style `artifacts/finetuning/dataset/train.json`. Output is a **full fine-tuned
+  model** (not a separate PEFT adapter).
+- `sample_finetune_vision_reference.py` — Microsoft's original, kept for reference.
+- `scripts/slurm/run_finetune_phi4mm_official.sh` — SLURM runner with a dedicated venv.
+
+## Why a dedicated venv
+Phi-4-mm's remote code is written for an **older transformers**; the runner pins:
+```
+transformers==4.47.0  peft==0.13.2  accelerate==1.3.0  scipy==1.15.1  backoff==2.2.1
+```
+This is isolated from the main repo venv (transformers 4.57.6, used by Qwen/InternVL).
+
+## Run
+```bash
+sbatch scripts/slurm/run_finetune_phi4mm_official.sh smoke   # 50 samples, fast validation
+sbatch scripts/slurm/run_finetune_phi4mm_official.sh         # full run
+```
+The trained model lands in `artifacts/finetuning/phi4mm_vision_sft/` (≈10–20 GB, full model).
+
+## Eval wiring (do after training)
+The output is a full model, not a PEFT adapter, so update the `phi4_finetuned` eval entry:
+- set `model_name` = `artifacts/finetuning/phi4mm_vision_sft` (the dir above)
+- remove `adapter_path`
+
+**Caveat:** evaluating this fine-tuned Phi-4-mm model needs the **same pinned transformers
+(4.47.0)** as training — the main eval pipeline runs 4.57.6. So Phi-4-mm (zero-shot *and*
+fine-tuned) likely needs its own eval environment; to be resolved when wiring Phi-4 into the
+eval runs.
+
+## Hyperparameters
+This path tunes the built-in vision LoRA (architecturally different from a fresh rank-16
+LoRA), so it follows the MS sample's recipe (lr 4e-5, linear schedule, warmup 50, 1 epoch,
+effective batch 8) rather than the verbatim Qwen YAML params — noted for the thesis writeup.
 
 ## Decision log
-- [ ] LLaMA-Factory `phi4` template result: __pass / fail__ (fill after Task 3 Step 4)
-- [ ] Fallback used: __yes / no__
+- [x] LLaMA-Factory `phi4` template result: **fail** ("does not support image input", job 1757561)
+- [x] Fallback used: **yes** (this path)
+- [ ] Smoke run passed: __pending HPC__
+- [ ] Full run + eval wiring done: __pending HPC__

@@ -12,11 +12,10 @@ Output PNG lands next to the log file.
 4) Find your trained LoRA weights at:
     /mnt/beegfs/amartinelli/finetune_out/qwen25vl_lora_smoke/
 
---- Multi-model LoRA fine-tuning (parallel, one model per job) ---
-Run all three in parallel (no collision; each uses its own scratch dir + venv + HF cache):
-    for M in internvl35 phi4mm; do
-        sbatch --job-name=ft-$M scripts/slurm/run_finetune_vlm.sh $M
-    done
-Smoke first (fast config check): append 'smoke' ->  run_finetune_vlm.sh <M> smoke
-Adapters land in: artifacts/finetuning/<M>_lora_sft/   (consumed by the *_finetuned eval entries)
+--- Multi-model LoRA fine-tuning ---
+InternVL3.5 via LLaMA-Factory (append 'smoke' for a fast config check):
+    sbatch --job-name=ft-internvl35 scripts/slurm/run_finetune_vlm.sh internvl35
+Phi-4-multimodal via Microsoft's official path (LLaMA-Factory can't train its vision path):
+    sbatch scripts/slurm/run_finetune_phi4mm_official.sh smoke   # then drop 'smoke' for the full run
+Trained adapters/models land in artifacts/finetuning/ (consumed by the *_finetuned eval entries).
 Qwen still uses its original script: sbatch scripts/slurm/run_finetune_qwen25vl.sh

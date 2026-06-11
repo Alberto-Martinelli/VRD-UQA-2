@@ -19,10 +19,11 @@ uv run python VQA_analysis/metrics/4_aggregate_summaries.py --tag bdocs_val100 -
 
 sbatch scripts/slurm/build_dataset.sh
 
-# --- LoRA fine-tuning the 3 new models in parallel ---
-for M in internvl35 phi4mm; do
-  sbatch --job-name=ft-$M scripts/slurm/run_finetune_vlm.sh $M
-done
-# Then evaluate fine-tuned models (Phase A launcher + FINETUNE flag):
+# --- LoRA fine-tuning the new models ---
+# InternVL3.5 via LLaMA-Factory:
+sbatch --job-name=ft-internvl35 scripts/slurm/run_finetune_vlm.sh internvl35
+# Phi-4-multimodal via Microsoft's official path (LLaMA-Factory can't train its vision path):
+sbatch scripts/slurm/run_finetune_phi4mm_official.sh smoke   # then drop 'smoke' for the full run
+# Then evaluate a fine-tuned model (Phase A launcher + FINETUNE flag):
 #   FINETUNE=--finetuned CONFIG=VQA_analysis/config_zeroshot.json \
-#     sbatch scripts/slurm/run_vqa_analysis.sh phi4 BDocs val_100
+#     sbatch scripts/slurm/run_vqa_analysis.sh internvl BDocs val_100
