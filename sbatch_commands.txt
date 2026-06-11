@@ -8,9 +8,13 @@ sbatch --job-name=DUDE     VRD-UQA/run_pipeline.sh DUDE     val 300
 sbatch --job-name=SlideVQA VRD-UQA/run_pipeline.sh SlideVQA val 300
 sbatch --job-name=BDocs    VRD-UQA/run_pipeline.sh BDocs    val 300
 
-sbatch scripts/slurm/run_vqa_analysis.sh                    # all 4 datasets, full eval (val_300)
-sbatch scripts/slurm/run_vqa_analysis.sh val_5              # all 4 datasets, smoke test (val_5)
-sbatch scripts/slurm/run_vqa_analysis.sh val_300 DUDE BDocs # specific datasets, full eval
+# --- Multi-model eval (one model x dataset x split per job; runs in parallel) ---
+# sbatch run_vqa_analysis.sh <model> <dataset> <split>   model = qwen2.5|llama|phi4|internvl
+for M in qwen2.5 llama phi4 internvl; do
+  sbatch --job-name=vqa-$M scripts/slurm/run_vqa_analysis.sh $M BDocs val_100
+done
+# After the jobs finish, build a comparison table across the private runs:
+uv run python VQA_analysis/metrics/4_aggregate_summaries.py --tag bdocs_val100 --datasets BDocs
 
 
 sbatch scripts/slurm/build_dataset.sh
