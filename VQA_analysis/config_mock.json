@@ -41,6 +41,15 @@
             "max_tokens": 1024,
             "use_flash_attention": true,
             "name": "Phi4-multimodal"
+        },
+        "internvl3_5": {
+            "model_name": "OpenGVLab/InternVL3_5-8B",
+            "batch_size": 1,
+            "max_tokens": 1024,
+            "max_tiles": 12,
+            "input_size": 448,
+            "use_flash_attention": true,
+            "name": "InternVL3.5-8B"
         }
     },
     "dataset": "SlideVQA",
