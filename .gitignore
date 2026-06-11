@@ -17,17 +17,13 @@ corruption-scripts/results/
 data/
 data_new/
 VQA_analysis/evaluation_files
-needed_images_2/
-results_w2_UNABLE/
-results/
-result*/
+VQA_analysis/notebooks/output
 
 INFO.md
 CLAUDE.md
 
 slurm-*.out
 
-other_scripts/
 CLAUDE.md
 
 .DS_Store
