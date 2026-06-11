@@ -37,7 +37,7 @@ load_best_model_at_end: true
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 8
 learning_rate: 2.0e-5
-num_train_epochs: 3.0
+num_train_epochs: 1.0
 lr_scheduler_type: cosine
 warmup_steps: 50
 bf16: true
