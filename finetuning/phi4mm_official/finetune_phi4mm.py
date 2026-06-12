@@ -127,7 +127,7 @@ def collate_fn(batch):
 def create_model(model_name_or_path, use_flash_attention=False):
     model = AutoModelForCausalLM.from_pretrained(
         model_name_or_path,
-        torch_dtype=torch.bfloat16 if use_flash_attention else torch.float32,
+        torch_dtype=torch.bfloat16,  # bf16 even with sdpa: fp32 (~22GB weights) OOMs on the A40
         _attn_implementation="flash_attention_2" if use_flash_attention else "sdpa",
         trust_remote_code=True,
     ).to("cuda")
@@ -176,7 +176,7 @@ def main():
     assert args.batch_size % (num_gpus * args.batch_size_per_gpu) == 0, \
         "batch_size must be divisible by num_gpus * batch_size_per_gpu"
     grad_accum = args.batch_size // (num_gpus * args.batch_size_per_gpu)
-    bf16 = bool(args.use_flash_attention)
+    bf16 = True  # bf16 regardless of flash-attn (sdpa path); fp32 OOMs on the A40
 
     training_args = TrainingArguments(
         num_train_epochs=args.num_train_epochs,
