@@ -69,6 +69,7 @@ accelerate launch --num_processes 1 "$SCRIPT" \
     --model_name_or_path microsoft/Phi-4-multimodal-instruct \
     --data_json "$DATA_JSON" \
     --output_dir "$SCRATCH_OUT" \
+    --dynamic_hd 16 \
     --num_train_epochs 1 \
     --learning_rate 4.0e-5 \
     --batch_size 8 --batch_size_per_gpu 1 \
