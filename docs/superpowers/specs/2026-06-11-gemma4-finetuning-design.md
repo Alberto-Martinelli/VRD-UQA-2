@@ -1,7 +1,9 @@
 # Gemma 4 12B LoRA Fine-Tuning — Design
 
-**Date:** 2026-06-11
-**Status:** Approved (design); pending spec review → implementation plan
+**Date:** 2026-06-11 (model id + architecture verified against primary sources 2026-06-12)
+**Status:** Approved (design + spec review). Repo id and architecture confirmed; two
+corrections applied 2026-06-12 (model class `AutoModelForMultimodalLM`; visual-token budget
+replaces the borrowed Phi-4 `dynamic_hd`/tiling reasoning). Next: implementation plan.
 **Scope:** Add Gemma 4 12B (multimodal, instruction-tuned) as a new fine-tuned core test
 model in VRD-UQA, trained via HF TRL + PEFT LoRA in a dedicated per-job venv.
 
@@ -14,9 +16,17 @@ the rest of the repo can run, reusing the existing model-agnostic SFT dataset.
 
 ## Why this approach (confirmed decisions)
 
-- **Model:** Gemma 4 12B multimodal, instruction-tuned (`google/gemma-4-12B-it`). Gemma's
-  license is **not EU-restricted** (unlike Meta's Llama vision models, which were dropped),
-  so it is a viable EU-friendly model. It is gated → needs `HF_TOKEN`.
+- **Model:** Gemma 4 12B multimodal, instruction-tuned (`google/gemma-4-12B-it`, released
+  2026-06-03, **Apache-2.0** — not EU-restricted, unlike the dropped Meta Llama vision
+  models). Repo id **verified to exist** (HF model card + Google developer guide, 2026-06-12).
+  It is gated → needs `HF_TOKEN`.
+- **Architecture (verified):** Gemma 4 12B is a **dense, encoder-free *unified* multimodal**
+  model — a single decoder-only transformer. A tiny 35M-param "vision embedder" projects raw
+  48×48 image patches straight into the LLM hidden dim via one matmul; there is **no separate
+  vision tower and no dynamic tiling**. Images use a **configurable visual-token budget**
+  (supported: 70 / 140 / 280 / 560 / 1120 tokens per image). This is materially simpler than
+  Phi-4: no crop-count surgery, and the per-record sequence length is bounded (one image/
+  record × ≤1120 tokens), so the Phi-4 image-token-explosion / OOM lesson does **not** apply.
 - **Framework: HF TRL `SFTTrainer` + PEFT LoRA — NOT LLaMA-Factory.** LLaMA-Factory has no
   Gemma 4 vision template yet (only PaliGemma2 / Qwen / InternVL). This mirrors the Phi-4
   decision (Phi-4 also left LLaMA-Factory, for a different reason).
@@ -57,9 +67,10 @@ the rest of the repo can run, reusing the existing model-agnostic SFT dataset.
 Structurally mirrors `finetuning/phi4mm_official/finetune_phi4mm.py` (dataset class, label
 masking, collator, `TrainingArguments`), but Gemma-4-specific:
 
-**Model load:**
+**Model load** (class corrected 2026-06-12 — the HF model card uses `AutoModelForMultimodalLM`,
+**not** `AutoModelForImageTextToText`):
 ```python
-AutoModelForImageTextToText.from_pretrained(
+AutoModelForMultimodalLM.from_pretrained(
     "google/gemma-4-12B-it",
     torch_dtype=torch.bfloat16,
     attn_implementation="flash_attention_2",
@@ -82,7 +93,11 @@ Save the **adapter** (`model.save_pretrained(output_dir)`); eval loads base + ad
   `[{"role":"user","content":[{"type":"image"},{"type":"text","text":question}]}]`
   (the `instruction` guideline prepended to the text, matching how the other evaluators
   combine instruction + question);
-- run through `processor.apply_chat_template(...)` + `AutoProcessor.__call__(images=[img], text=...)`;
+- run through `processor.apply_chat_template(...)` + `AutoProcessor.__call__(images=[img], text=...)`,
+  with the processor's **visual-token budget set to 560** (balanced default for dense VRD
+  text/tables/charts; honors the project's capped-input constraint and fits the A40 easily).
+  Exact processor knob name (e.g. `visual_token_budget` / a processor kwarg) is an
+  implementation detail to confirm from the model's `AutoProcessor` API;
 - mask labels so only the **response** tokens are supervised (same masking approach as the
   Phi-4-MM script: build prompt then answer ids, set labels = IGNORE except the answer span).
 
@@ -90,7 +105,8 @@ Save the **adapter** (`model.save_pretrained(output_dir)`); eval loads base + ad
 `learning_rate=2e-5`, `lr_scheduler_type="cosine"`, `warmup_steps=50`,
 `num_train_epochs=1`, `per_device_train_batch_size=1`, `gradient_accumulation_steps=8`,
 `bf16=True`, `gradient_checkpointing=True`. CLI: `--model_name_or_path`, `--data_json`,
-`--output_dir`, `--max_samples` (smoke), `--use_flash_attention` (default on).
+`--output_dir`, `--max_samples` (smoke), `--use_flash_attention` (default on),
+`--visual_token_budget` (default **560**).
 
 ---
 
@@ -132,13 +148,20 @@ template, like the rewritten InternVL evaluator — and would also need the Gemm
 
 ## Open items to verify during implementation (not design blockers)
 
-- **Repo id:** confirm `google/gemma-4-12B-it` is the exact HF id for the instruction-tuned
-  multimodal 12B (vs `google/gemma-4-12B`).
-- **Memory:** confirm Gemma 4 12B fits 1×A40 48GB with LoRA + bf16 + gradient checkpointing.
-  If it OOMs, fall back to **QLoRA** (`BitsAndBytesConfig` 4-bit) — `bitsandbytes` is already
-  in the dep list for this reason.
-- **`target_modules=None`:** confirm PEFT 0.19+ actually supplies Gemma 4 defaults; if not,
-  set them explicitly (attn/MLP projections).
+- **Repo id:** ✅ **CONFIRMED** — `google/gemma-4-12B-it` exists (HF model card + Google
+  developer guide, 2026-06-03 release). Instruction-tuned, dense, multimodal, Apache-2.0.
+- **Model class:** ✅ **CONFIRMED** — `AutoModelForMultimodalLM` + `AutoProcessor` (per the
+  model card), corrected in Component 1.
+- **Visual-token budget:** default **560** (decided). Confirm the exact processor knob/kwarg
+  name and that 560 is a supported value (supported set: 70/140/280/560/1120). Because Gemma 4
+  is encoder-free with a bounded per-image budget, there is **no `dynamic_hd`/tiling knob and no
+  image-token explosion** — the Phi-4 crop-capping lesson does not transfer.
+- **Memory:** Gemma 4 12B + LoRA + bf16 + gradient checkpointing on 1×A40 48GB is expected to
+  fit comfortably (one image/record × ≤560 tokens; far below Phi-4's ~9345). If it still OOMs,
+  fall back to **QLoRA** (`BitsAndBytesConfig` 4-bit) — `bitsandbytes` is in the dep list.
+- **`target_modules=None`:** confirm PEFT 0.19+ supplies Gemma 4 defaults; if not, set them
+  explicitly. NB encoder-free → targets are the **decoder** attn/MLP projections only (no
+  vision-tower modules to target).
 - **flash-attention-2** availability in the venv for the pinned torch 2.4.1+cu121; if the
   build is problematic, fall back to `attn_implementation="sdpa"` + bf16 (the same lesson
   learned on Phi-4: bf16 is what matters for fitting; flash is a perf bonus).
