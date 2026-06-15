@@ -39,8 +39,13 @@ def _load_evaluator_class(model):
 
 
 def _resolve_input_file(dataset, split):
+    # data/ is excluded from the SLURM scratch sync, so the corrupted-questions
+    # input is read from the PERSISTENT repo. VRD_UQA_HOME (exported by
+    # scripts/env.sh) points there; locally it falls back to REPO_ROOT (which,
+    # off-SLURM, is the running checkout and does contain data/).
+    data_root = Path(os.getenv("VRD_UQA_HOME", str(REPO_ROOT)))
     return str(
-        REPO_ROOT / "data" / dataset / f"{dataset}_{split}"
+        data_root / "data" / dataset / f"{dataset}_{split}"
         / f"{dataset}_unanswerable_corrupted_questions_just_false.json"
     )
 
