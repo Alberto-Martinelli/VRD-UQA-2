@@ -33,7 +33,7 @@ setup_scratch_workdir "VQA_analysis_${SLURM_JOB_ID}"
 restore_prior_run "$VQA_RUN_ID"
 activate_eval_venv "$MODEL"
 
-printf '\n=== %s — %s — %s ===\n' "$MODEL" "$CONFIG" "$DATASET"
+printf '\n=== %s — %s — QUR+FRR — %s ===\n' "$MODEL" "$CONFIG" "$DATASET"
 "${EVAL_CMD[@]}" VQA_analysis/evaluators/run_eval.py \
     --model "$MODEL" --dataset "$DATASET" --split "$SPLIT" \
     --config "$CONFIG" $FINETUNE --questions both

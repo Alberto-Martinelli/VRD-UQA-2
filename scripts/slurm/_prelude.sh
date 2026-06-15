@@ -59,7 +59,7 @@ restore_prior_run() {
     local dest="$HOME/VRD-UQA/artifacts/evaluation_runs/$run_id"
     local src="$WORK_DIR/artifacts/evaluation_runs/$run_id"
     if [ -d "$dest" ]; then
-        echo "RESUME: restoring $dest into scratch"
+        echo "RESUME: prior results at $dest — restoring into scratch; finished leaf will be skipped."
         mkdir -p "$src"
         rsync -aq "$dest/" "$src/"
     fi
