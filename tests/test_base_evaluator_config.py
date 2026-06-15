@@ -38,8 +38,12 @@ def test_init_still_accepts_path():
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "cfg.json"
         p.write_text(json.dumps(_cfg()))
+        # str path
         e = _dummy_cls(base)(str(p), finetuned=False)
         assert e.seed == 13
+        # Path object (exercises the os.PathLike branch)
+        e2 = _dummy_cls(base)(p, finetuned=False)
+        assert e2.seed == 13
 
 
 if __name__ == "__main__":
