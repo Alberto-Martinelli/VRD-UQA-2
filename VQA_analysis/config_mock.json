@@ -45,8 +45,7 @@
             "name": "InternVL3.5-8B"
         },
         "phi4_finetuned": {
-            "model_name": "microsoft/Phi-4-multimodal-instruct",
-            "adapter_path": "/home/amartinelli/VRD-UQA/artifacts/finetuning/phi4mm_lora_sft",
+            "model_name": "/home/amartinelli/VRD-UQA/artifacts/finetuning/phi4mm_vision_sft",
             "batch_size": 1,
             "max_tokens": 1024,
             "use_flash_attention": true,
