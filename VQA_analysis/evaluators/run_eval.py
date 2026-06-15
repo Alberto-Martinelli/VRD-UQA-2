@@ -31,6 +31,8 @@ def _load_evaluator_class(model):
     module_file, class_name = EVALUATORS[model]
     mod_name = module_file[:-3].replace(".", "_")  # qwen2.5_evaluator -> qwen2_5_evaluator
     spec = importlib.util.spec_from_file_location(mod_name, HERE / module_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot locate evaluator module: {HERE / module_file}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return getattr(module, class_name)
@@ -58,7 +60,7 @@ def main():
     with open(args.config) as f:
         config = json.load(f)
     config["dataset"] = args.dataset
-    config["split"] = args.split.split("_")[0]
+    config["split"] = args.split.split("_")[0]  # strips size suffix: val_300 -> "val"
     config["input_file"] = args.input_file or _resolve_input_file(args.dataset, args.split)
 
     # Provenance for the run manifest (base_evaluator reads VQA_CONFIG_PATH).
