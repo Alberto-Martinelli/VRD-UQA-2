@@ -3,13 +3,14 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=0-20:00:00
+#SBATCH --time=0-16:00:00
 #SBATCH --partition=gpu_a40
 #SBATCH --gres=gpu:1
 #SBATCH --output=slurm-fewshot_ksweep-%j.out
 
-# Few-shot k-sweep: Qwen2.5-7B base model, SlideVQA + BDocs.
-# Evaluates k=0 (zero-shot anchor) and k=1,2,3,4 with selection=random and selection=specific.
+# Few-shot experiment: Qwen2.5-7B base model, SlideVQA + BDocs.
+# Conditions: k=2 random (baseline) + k=2,4,6 specific (corruption-matched selection).
+# Evaluates only corrupted questions (--questions corrupted).
 # Demos are drawn from the held-out train_750 pool (no val-set leakage).
 # All leaves share one VQA_RUN_ID so the metrics pipeline produces a single summary.csv.
 #
@@ -71,7 +72,6 @@ if [ -d "$DEST_RUN" ]; then
     rsync -aq "$DEST_RUN/" "$SRC_RUN/"
 fi
 
-ZS_CONFIG="VQA_analysis/config_zeroshot.json"
 FS_CONFIG="VQA_analysis/config_fewshot.json"
 
 # Patch a config JSON for a given dataset/split/few-shot parameters.
@@ -108,24 +108,22 @@ for D in "${DATASETS[@]}"; do
 
     printf "\n\n########## DATASET: %s  (split=%s) ##########\n" "$D" "$SPLIT"
 
-    # ---- k=0: zero-shot anchor (base model, no few-shot) ----
-    printf "\n=== QWEN2.5 BASE — ZERO-SHOT (k=0) — %s ===\n" "$D"
-    patch_config "$ZS_CONFIG" "$D" "$SPLIT" "false" 0 "random" ""
-    export VQA_CONFIG_PATH="$ZS_CONFIG"
+    # ---- k=2 random (baseline) ----
+    printf "\n=== QWEN2.5 BASE — FEW-SHOT k=2 random — %s ===\n" "$D"
+    patch_config "$FS_CONFIG" "$D" "$SPLIT" "true" 2 "random" "$POOL_FILE"
+    export VQA_CONFIG_PATH="$FS_CONFIG"
     uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py \
-        --config_path "$ZS_CONFIG" --questions both
+        --config_path "$FS_CONFIG" --questions corrupted
     sync_back
 
-    # ---- k=1..4 x random + specific (base model) ----
-    for K in 1 2 3 4; do
-        for SEL in random specific; do
-            printf "\n=== QWEN2.5 BASE — FEW-SHOT k=%d sel=%s — %s ===\n" "$K" "$SEL" "$D"
-            patch_config "$FS_CONFIG" "$D" "$SPLIT" "true" "$K" "$SEL" "$POOL_FILE"
-            export VQA_CONFIG_PATH="$FS_CONFIG"
-            uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py \
-                --config_path "$FS_CONFIG" --questions both
-            sync_back
-        done
+    # ---- k=2,4,6 specific (corruption-matched) ----
+    for K in 2 4 6; do
+        printf "\n=== QWEN2.5 BASE — FEW-SHOT k=%d specific — %s ===\n" "$K" "$D"
+        patch_config "$FS_CONFIG" "$D" "$SPLIT" "true" "$K" "specific" "$POOL_FILE"
+        export VQA_CONFIG_PATH="$FS_CONFIG"
+        uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py \
+            --config_path "$FS_CONFIG" --questions corrupted
+        sync_back
     done
 done
 
@@ -153,8 +151,9 @@ rl.write_manifest(run / 'run_manifest.json', {
     'datasets': datasets,
     'configs': configs,
     'experiment': 'fewshot_ksweep',
-    'k_values': [0, 1, 2, 3, 4],
+    'k_values': [2, 4, 6],
     'selections': ['random', 'specific'],
+    'conditions': 'k=2 random (baseline); k=2,4,6 specific',
     'model': 'Qwen2.5-VL-7B-Instruct',
     'pool': 'train_750',
 })
