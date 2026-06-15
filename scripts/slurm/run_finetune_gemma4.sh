@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=0-16:00:00
+#SBATCH --time=0-08:00:00
 #SBATCH --partition=gpu_a40
 #SBATCH --gres=gpu:1
 #SBATCH --output=slurm-finetune-gemma4-%j.out
@@ -57,7 +57,9 @@ uv pip install \
 uv pip install flash-attn --no-build-isolation || echo "flash-attn unavailable; using sdpa"
 
 # ---- Train ----
-DATA_JSON="$WORK_DIR/VRD-UQA/artifacts/finetuning/dataset/train.json"
+# Dataset variant (output-format iteration); override with DATA_DIR=<subdir>.
+DATA_DIR="${DATA_DIR:-3_with_binary_output}"
+DATA_JSON="$WORK_DIR/VRD-UQA/artifacts/finetuning/dataset/$DATA_DIR/train.json"
 SCRATCH_OUT="$WORK_DIR/out"
 SCRIPT="$WORK_DIR/VRD-UQA/finetuning/gemma4/finetune_gemma4.py"
 
