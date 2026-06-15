@@ -11,7 +11,7 @@
 # One model x one dataset x one split per job (parallel-safe, resumable).
 #   sbatch run_vqa_analysis.sh <model> <dataset> <split>
 #   <model> = qwen2.5 | phi4 | internvl | gemma4
-# Env knobs: CONFIG=<path>  FINETUNE=--finetuned  RUN_TAG=foo  NO_LATEST=1
+# Env knobs: CONFIG=<path>  FINETUNE=--finetuned  QUESTIONS=both|corrupted|clean  RUN_TAG=foo  NO_LATEST=1
 set -uo pipefail
 START_TIME=$SECONDS
 echo "Job started at: $(date)"
@@ -24,6 +24,7 @@ DATASET="${2:?usage: run_vqa_analysis.sh <model> <dataset> <split>}"
 SPLIT="${3:-val_300}"
 CONFIG="${CONFIG:-VQA_analysis/config_fewshot.json}"
 FINETUNE="${FINETUNE:-}"
+QUESTIONS="${QUESTIONS:-both}"
 
 export VQA_RUN_ID="${VQA_RUN_ID:-$(make_run_id "$MODEL" "$DATASET" "$SPLIT")}"
 export VQA_CONFIG_PATH="$CONFIG"
@@ -36,7 +37,7 @@ activate_eval_venv "$MODEL"
 printf '\n=== %s — %s — QUR+FRR — %s ===\n' "$MODEL" "$CONFIG" "$DATASET"
 "${EVAL_CMD[@]}" VQA_analysis/evaluators/run_eval.py \
     --model "$MODEL" --dataset "$DATASET" --split "$SPLIT" \
-    --config "$CONFIG" $FINETUNE --questions both
+    --config "$CONFIG" $FINETUNE --questions "$QUESTIONS"
 sync_run_back "$VQA_RUN_ID"
 
 # Metrics — model-agnostic, main uv venv, scoped to THIS run id.
