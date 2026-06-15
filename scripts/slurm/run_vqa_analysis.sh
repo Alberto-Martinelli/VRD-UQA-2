@@ -13,9 +13,13 @@
 #   sbatch run_vqa_analysis.sh <model> <dataset> <split>
 #   e.g. sbatch run_vqa_analysis.sh phi4 BDocs val_100
 #
-#   <model>   = qwen2.5 | phi4 | internvl
+#   <model>   = qwen2.5 | phi4 | internvl | gemma4
 #   <dataset> = BDocs | DUDE | MPDocVQA | SlideVQA
 #   <split>   = val_300 | val_100 | val_5 | ...
+#
+# qwen2.5/internvl run the evaluator in the main repo venv (transformers 4.57.6). phi4 and
+# gemma4 need a different transformers, so the evaluator runs in a per-job PINNED venv built
+# on scratch (phi4 ==4.47.0, gemma4 >=5.5.2); the metrics steps still use the main venv.
 #
 # Each job derives a deterministic, unique run_id eval_<split>_<n>_<model>_<dataset>,
 # so parallel jobs never share a run dir (no sync/metrics collision). Resubmitting
@@ -103,8 +107,41 @@ cfg['input_file'] = input_file
 json.dump(cfg, open(cfg_path, 'w'), indent=4)
 " "$DATASET" "$SPLIT" "$CONFIG"
 
+# --- Evaluator interpreter selection -------------------------------------------------
+# qwen2.5/internvl run in the main (uv) venv. phi4 and gemma4 need a different transformers
+# than the repo venv (phi4: ==4.47.0 for its remote code; gemma4: >=5.5.2 for
+# AutoModelForMultimodalLM), so they get a per-job PINNED venv on scratch, built once per
+# job. The metrics steps below ALWAYS use the main venv (model-agnostic, run on 4.57.6).
+EVAL_CMD=(uv run python)
+case "$MODEL" in
+  phi4|gemma4)
+    EVAL_VENV="$WORK_DIR/.venv_eval"
+    EVAL_VPY="$EVAL_VENV/bin/python"
+    echo "Building pinned eval venv for $MODEL at $EVAL_VENV ..."
+    uv venv --python 3.11 "$EVAL_VENV"
+    uv pip install --python "$EVAL_VPY" --index-url https://download.pytorch.org/whl/cu121 \
+        torch==2.4.1+cu121 torchvision==0.19.1+cu121
+    if [ "$MODEL" = "phi4" ]; then
+        uv pip install --python "$EVAL_VPY" \
+            transformers==4.47.0 peft==0.13.2 accelerate==1.3.0 scipy==1.15.1 backoff==2.2.1 \
+            Pillow soundfile sentencepiece protobuf tqdm numpy
+    else  # gemma4
+        uv pip install --python "$EVAL_VPY" \
+            "transformers>=5.5.2" "peft>=0.19.0" accelerate bitsandbytes \
+            Pillow sentencepiece protobuf tqdm numpy
+    fi
+    # flash-attn is optional (perf only); best-effort. If it does not build, set
+    # use_flash_attention=false for this model in the config or the evaluator load will fail.
+    uv pip install --python "$EVAL_VPY" flash-attn --no-build-isolation \
+        || echo "flash-attn unavailable in eval venv; set use_flash_attention=false for $MODEL if load fails"
+    # config (pure stdlib) + base_evaluator must import without the editable project install:
+    # PYTHONPATH=repo-root exposes the `config` package; base_evaluator resolves via script dir.
+    EVAL_CMD=(env "PYTHONPATH=$WORK_DIR" "$EVAL_VPY")
+    ;;
+esac
+
 printf '\n=== %s — %s — QUR+FRR — %s ===\n' "$MODEL" "$CONFIG" "$DATASET"
-uv run python "$ENTRY" --config_path "$CONFIG" $FINETUNE --questions both
+"${EVAL_CMD[@]}" "$ENTRY" --config_path "$CONFIG" $FINETUNE --questions both
 sync_back
 
 # Metrics — scoped to THIS run_id only (private tree => no cross-job collision).
