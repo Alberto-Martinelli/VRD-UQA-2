@@ -9,13 +9,13 @@ from config.paths import REPO_ROOT
 
 SAMPLE = REPO_ROOT / "VQA_analysis" / "evaluation_files" / "BDocs_sample15.json"
 
-# (model_key, entrypoint, leaf_prefix). Qwen is finetuned (adapter entry exists);
-# the new models have no adapter yet, so they run zero-shot (no --finetuned).
+# (cli_model_key, leaf_prefix, finetuned). Qwen has an adapter entry (finetuned);
+# the others run zero-shot. cli_model_key is the run_eval.py --model value.
 MODELS = [
-    ("qwen2.5", "VQA_analysis/evaluators/qwen2.5_evaluator.py", "", True),
-    ("phi4", "VQA_analysis/evaluators/phi4_evaluator.py", "phi4", False),
-    ("internvl3_5", "VQA_analysis/evaluators/internvl_evaluator.py", "internvl", False),
-    ("gemma4", "VQA_analysis/evaluators/gemma4_evaluator.py", "gemma", False),
+    ("qwen2.5",  "",         True),
+    ("phi4",     "phi4",     False),
+    ("internvl", "internvl", False),
+    ("gemma4",   "gemma",    False),
 ]
 
 
@@ -32,11 +32,14 @@ def _write_mock_config(tmp):
     return cfg
 
 
-def _run(entrypoint, cfg, run_id, questions, run_root, finetuned):
+def _run(model, cfg, run_id, questions, run_root, finetuned, input_file=SAMPLE):
     env = dict(os.environ)
     env["VQA_RUN_ID"] = run_id
     env["VQA_EVAL_RUNS_DIR"] = str(run_root)
-    cmd = ["uv", "run", "python", entrypoint, "--config_path", str(cfg), "--questions", questions]
+    cmd = ["uv", "run", "python", "VQA_analysis/evaluators/run_eval.py",
+           "--model", model, "--dataset", "BDocs", "--split", "val_15",
+           "--config", str(cfg), "--input-file", str(input_file),
+           "--questions", questions]
     if finetuned:
         cmd.append("--finetuned")
     subprocess.check_call(cmd, cwd=str(REPO_ROOT), env=env)
@@ -48,12 +51,12 @@ def _leaf_name(prefix, finetuned):
 
 
 def test_all_models_dual_answer_and_namespaced_leaf():
-    for i, (key, entry, prefix, finetuned) in enumerate(MODELS):
+    for i, (key, prefix, finetuned) in enumerate(MODELS):
         tmp = tempfile.mkdtemp()
         run_root = Path(tmp) / "runs"
         cfg = _write_mock_config(tmp)
         run_id = f"eval_val_15_2026010100000{i}"
-        _run(entry, cfg, run_id, "both", run_root, finetuned)
+        _run(key, cfg, run_id, "both", run_root, finetuned)
 
         leaf = run_root / run_id / "BDocs" / _leaf_name(prefix, finetuned)
         preds = json.load(open(leaf / "predictions.json"))
@@ -73,7 +76,7 @@ def test_corrupted_only_omits_clean_qwen():
     run_root = Path(tmp) / "runs"
     cfg = _write_mock_config(tmp)
     run_id = "eval_val_15_20260101_000010"
-    _run(MODELS[0][1], cfg, run_id, "corrupted", run_root, True)
+    _run(MODELS[0][0], cfg, run_id, "corrupted", run_root, True)
     leaf = run_root / run_id / "BDocs" / "finetuned_noocr"
     item0 = json.load(open(leaf / "predictions.json"))["corrupted_questions"][0]["verification_result"]["vqa_results"][0]
     assert "answer_corrupted" in item0 and "answer_clean" not in item0
@@ -84,14 +87,14 @@ def test_resume_skips_completed_leaf_qwen():
     run_root = Path(tmp) / "runs"
     cfg = _write_mock_config(tmp)
     run_id = "eval_val_15_20260101_000011"
-    _run(MODELS[0][1], cfg, run_id, "both", run_root, True)
+    _run(MODELS[0][0], cfg, run_id, "both", run_root, True)
     preds = run_root / run_id / "BDocs" / "finetuned_noocr" / "predictions.json"
     with open(preds) as f:
         d = json.load(f)
     d["_resume_marker"] = True
     with open(preds, "w") as f:
         json.dump(d, f)
-    _run(MODELS[0][1], cfg, run_id, "both", run_root, True)  # second pass -> should skip
+    _run(MODELS[0][0], cfg, run_id, "both", run_root, True)  # second pass -> should skip
     with open(preds) as f:
         assert json.load(f).get("_resume_marker") is True
 

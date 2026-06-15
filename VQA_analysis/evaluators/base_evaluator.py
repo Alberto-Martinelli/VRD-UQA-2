@@ -18,9 +18,13 @@ class BaseVQAEvaluator:
     MODEL_TYPE: str = "base"       # written to vqa_result["model_type"]
     MODEL_LEAF_PREFIX: str = ""     # "" for Qwen (back-compat); model key otherwise
 
-    def __init__(self, config_path, finetuned, questions="both"):
-        with open(config_path) as f:
-            self.config = json.load(f)
+    def __init__(self, config, finetuned, questions="both"):
+        # config may be a path (loaded here) or an already-built dict (passed by run_eval.py).
+        if isinstance(config, (str, os.PathLike)):
+            with open(config) as f:
+                self.config = json.load(f)
+        else:
+            self.config = config
 
         self.finetuned = finetuned
         self.questions = questions
