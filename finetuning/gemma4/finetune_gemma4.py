@@ -140,3 +140,99 @@ def build_collate_fn(pad_token_id=0):
         return BatchFeature(out)
 
     return collate_fn
+
+
+def create_model(model_name_or_path, use_flash_attention=True, lora_r=16, lora_alpha=32):
+    # Lazy imports: only needed on the A40 (per-job venv with transformers>=5.5.2 / peft>=0.19).
+    from transformers import AutoModelForMultimodalLM
+    from peft import LoraConfig, get_peft_model
+
+    model = AutoModelForMultimodalLM.from_pretrained(
+        model_name_or_path,
+        torch_dtype=torch.bfloat16,  # bf16: fp32 weights OOM on the A40 (Phi-4 lesson)
+        attn_implementation="flash_attention_2" if use_flash_attention else "sdpa",
+    )
+    lora_config = LoraConfig(
+        task_type="CAUSAL_LM",
+        r=lora_r,
+        lora_alpha=lora_alpha,
+        lora_dropout=0.0,
+        bias="none",
+        target_modules=None,  # PEFT 0.19+ supplies Gemma 4 decoder defaults (no vision tower)
+    )
+    model = get_peft_model(model, lora_config)
+    model.enable_input_require_grads()  # needed for gradient checkpointing + PEFT
+    model.print_trainable_parameters()
+    return model
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--model_name_or_path", default="google/gemma-4-12B-it")
+    p.add_argument("--data_json", required=True, help="VRD-UQA SFT train.json")
+    p.add_argument("--output_dir", required=True)
+    p.add_argument("--use_flash_attention", action="store_true", default=True)
+    p.add_argument("--no_flash_attention", dest="use_flash_attention", action="store_false")
+    p.add_argument("--visual_token_budget", type=int, default=560,
+                   help="Gemma 4 per-image token budget (supported: 70/140/280/560/1120)")
+    p.add_argument("--lora_r", type=int, default=16)
+    p.add_argument("--lora_alpha", type=int, default=32)
+    p.add_argument("--learning_rate", type=float, default=2.0e-5)
+    p.add_argument("--num_train_epochs", type=float, default=1.0)
+    p.add_argument("--per_device_train_batch_size", type=int, default=1)
+    p.add_argument("--gradient_accumulation_steps", type=int, default=8)
+    p.add_argument("--warmup_steps", type=int, default=50)
+    p.add_argument("--max_samples", type=int, default=None, help="for a smoke run")
+    args = p.parse_args()
+
+    # visual_token_budget: confirm the exact processor kwarg on the A40 smoke run; if the
+    # kwarg name differs, fix it here only (the dataset/collator are budget-agnostic).
+    processor = AutoProcessor.from_pretrained(
+        args.model_name_or_path, visual_token_budget=args.visual_token_budget
+    )
+    model = create_model(
+        args.model_name_or_path,
+        use_flash_attention=args.use_flash_attention,
+        lora_r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+    )
+
+    train_dataset = VrdUqaGemmaDataset(processor, args.data_json, max_samples=args.max_samples)
+    print(f"Training on {len(train_dataset)} examples")
+
+    training_args = TrainingArguments(
+        output_dir=args.output_dir,
+        num_train_epochs=args.num_train_epochs,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        optim="adamw_torch",
+        learning_rate=args.learning_rate,
+        lr_scheduler_type="cosine",
+        warmup_steps=args.warmup_steps,
+        max_grad_norm=1.0,
+        bf16=True,
+        logging_steps=10,
+        save_strategy="no",
+        report_to="none",
+        remove_unused_columns=False,  # keep pixel_values etc. for the model forward
+        dataloader_num_workers=1,     # custom processor not picklable (Phi-4 lesson)
+    )
+
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    pad_token_id = processor.tokenizer.pad_token_id or 0
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        data_collator=build_collate_fn(pad_token_id),
+        train_dataset=train_dataset,
+    )
+    trainer.train()
+    trainer.save_model()           # saves the PEFT LoRA adapter only (~500MB)
+    processor.save_pretrained(args.output_dir)
+    print(f"Saved Gemma 4 LoRA adapter to {args.output_dir}")
+
+
+if __name__ == "__main__":
+    main()
