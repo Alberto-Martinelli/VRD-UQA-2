@@ -17,5 +17,7 @@ InternVL3.5 via LLaMA-Factory (append 'smoke' for a fast config check):
     sbatch --job-name=ft-internvl35 scripts/slurm/run_finetune_vlm.sh internvl35
 Phi-4-multimodal via Microsoft's official path (LLaMA-Factory can't train its vision path):
     sbatch scripts/slurm/run_finetune_phi4mm_official.sh smoke   # then drop 'smoke' for the full run
+Gemma 4 12B via HF Trainer+PEFT LoRA (LLaMA-Factory has no Gemma 4 vision template):
+    sbatch scripts/slurm/run_finetune_gemma4.sh smoke   # then drop 'smoke' for the full run
 Trained adapters/models land in artifacts/finetuning/ (consumed by the *_finetuned eval entries).
 Qwen still uses its original script: sbatch scripts/slurm/run_finetune_qwen25vl.sh
