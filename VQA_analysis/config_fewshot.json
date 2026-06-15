@@ -60,6 +60,23 @@
             "input_size": 448,
             "use_flash_attention": true,
             "name": "InternVL3.5-8B_finetuned"
+        },
+        "gemma4": {
+            "model_name": "google/gemma-4-12B-it",
+            "batch_size": 1,
+            "max_tokens": 1024,
+            "visual_token_budget": 560,
+            "use_flash_attention": true,
+            "name": "Gemma4-12B"
+        },
+        "gemma4_finetuned": {
+            "model_name": "google/gemma-4-12B-it",
+            "adapter_path": "/home/amartinelli/VRD-UQA/artifacts/finetuning/gemma4_12b_lora_sft",
+            "batch_size": 1,
+            "max_tokens": 1024,
+            "visual_token_budget": 560,
+            "use_flash_attention": true,
+            "name": "Gemma4-12B_finetuned"
         }
     },
     "dataset": "BDocs",

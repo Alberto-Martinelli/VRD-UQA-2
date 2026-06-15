@@ -15,6 +15,7 @@ MODELS = [
     ("qwen2.5", "VQA_analysis/evaluators/qwen2.5_evaluator.py", "", True),
     ("phi4", "VQA_analysis/evaluators/phi4_evaluator.py", "phi4", False),
     ("internvl3_5", "VQA_analysis/evaluators/internvl_evaluator.py", "internvl", False),
+    ("gemma4", "VQA_analysis/evaluators/gemma4_evaluator.py", "gemma", False),
 ]
 
 
@@ -59,7 +60,7 @@ def test_all_models_dual_answer_and_namespaced_leaf():
         item0 = preds["corrupted_questions"][0]["verification_result"]["vqa_results"][0]
         assert "answer_corrupted" in item0 and "answer_clean" in item0, key
         assert item0["question_corrupted"] != item0["question_clean"], key
-        assert item0["model_type"] in ("qwen", "phi4", "internvl"), key
+        assert item0["model_type"] in ("qwen", "phi4", "internvl", "gemma"), key
 
         man = json.load(open(leaf / "manifest.json"))
         assert man["dataset"] == "BDocs", key
@@ -99,4 +100,4 @@ if __name__ == "__main__":
     test_all_models_dual_answer_and_namespaced_leaf()
     test_corrupted_only_omits_clean_qwen()
     test_resume_skips_completed_leaf_qwen()
-    print("OK: evaluator mock dual-answer (all 3 models)")
+    print("OK: evaluator mock dual-answer (all 4 models)")

@@ -38,6 +38,7 @@ case "$MODEL" in
   qwen2.5)  ENTRY="VQA_analysis/evaluators/qwen2.5_evaluator.py" ;;
   phi4)     ENTRY="VQA_analysis/evaluators/phi4_evaluator.py" ;;
   internvl) ENTRY="VQA_analysis/evaluators/internvl_evaluator.py" ;;
+  gemma4)   ENTRY="VQA_analysis/evaluators/gemma4_evaluator.py" ;;
   *) echo "ERROR: unknown model '$MODEL'"; exit 2 ;;
 esac
 
