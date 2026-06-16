@@ -158,7 +158,10 @@ def create_model(model_name_or_path, use_flash_attention=True, lora_r=16, lora_a
         lora_alpha=lora_alpha,
         lora_dropout=0.0,
         bias="none",
-        target_modules=None,  # PEFT 0.19+ supplies Gemma 4 decoder defaults (no vision tower)
+        # PEFT 0.19 has no target-module mapping for Gemma 4's multimodal arch, so it
+        # cannot auto-infer from None. "all-linear" discovers every nn.Linear — same as
+        # the repo's working qwen/internvl LoRA configs (lora_target: all).
+        target_modules="all-linear",
     )
     model = get_peft_model(model, lora_config)
     model.enable_input_require_grads()  # needed for gradient checkpointing + PEFT
