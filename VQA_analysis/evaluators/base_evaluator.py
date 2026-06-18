@@ -219,7 +219,7 @@ class BaseVQAEvaluator:
             if os.path.exists(pool_file):
                 with open(pool_file) as f:
                     data = json.load(f)
-                self._fs_pool_cache = data.get("corrupted_questions", [])
+                self._fs_pool_cache = data.get("corrupted_questions") or data.get("items", [])
                 print(f"Few-shot pool loaded from {pool_file}: {len(self._fs_pool_cache)} items")
             else:
                 print(f"WARNING: pool_file {pool_file!r} not found; falling back to eval pool.")
@@ -258,9 +258,10 @@ class BaseVQAEvaluator:
         valid_pool = []
         for item in pool:
             pages = item.get("layout_analysis", {}).get("pages", {})
+            item_base = item.get("images_base_path", self.images_base_path)
             missing = [
                 p_id for p_id in pages
-                if not os.path.exists(os.path.join(self.images_base_path, os.path.basename(p_id)))
+                if not os.path.exists(os.path.join(item_base, os.path.basename(p_id)))
             ]
             if missing:
                 print(f"WARNING: few-shot candidate skipped — missing images: {missing}")
@@ -273,6 +274,10 @@ class BaseVQAEvaluator:
 
         # Pick n_shots candidates according to selection strategy
         n_select = min(n_shots, len(pool))
+        if selection == "handpicked":
+            # Fixed ordered pool — no ranking or filtering, always answerable
+            sampled = pool[:n_select]
+            return [{"type": "answerable", "item": s} for s in sampled]
         if selection == "specific":
             # Rank by (complexity_match, entity_type_jaccard); stable sort for determinism
             scored = sorted(pool, key=lambda c: self._fs_specific_score(c, current_item), reverse=True)
@@ -515,21 +520,25 @@ class BaseVQAEvaluator:
 
             start = max(0, min(anchor - window_size // 2, len(all_pages) - window_size))
             window_pages = all_pages[start:start + window_size]
+            item_base = item.get("images_base_path", self.images_base_path)
             image_paths = [
-                os.path.join(self.images_base_path, os.path.basename(p_id))
+                os.path.join(item_base, os.path.basename(p_id))
                 for p_id in window_pages
             ]
 
             ocr_text = None
             if self.config.get("ocr_enabled", False):
                 window_pages_dict = {p: item["layout_analysis"]["pages"][p] for p in window_pages}
-                ocr_dict = self.get_ocr_text(window_pages_dict)
-                ocr_lines = []
-                for i, path in enumerate(image_paths):
-                    page_ocr = ocr_dict.get(path, "")
-                    if page_ocr:
-                        ocr_lines.append(f"Page {i + 1}:\n{page_ocr}")
-                ocr_text = "\n\n".join(ocr_lines) if ocr_lines else None
+                # Handpicked demos store minimal page dicts (no layout_analysis inside each page);
+                # skip OCR extraction for those to avoid KeyError.
+                if all("layout_analysis" in v for v in window_pages_dict.values()):
+                    ocr_dict = self.get_ocr_text(window_pages_dict)
+                    ocr_lines = []
+                    for i, path in enumerate(image_paths):
+                        page_ocr = ocr_dict.get(path, "")
+                        if page_ocr:
+                            ocr_lines.append(f"Page {i + 1}:\n{page_ocr}")
+                    ocr_text = "\n\n".join(ocr_lines) if ocr_lines else None
 
             if is_ans:
                 q_text = item["original_question"]

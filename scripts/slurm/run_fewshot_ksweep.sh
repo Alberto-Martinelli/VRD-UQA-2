@@ -9,9 +9,9 @@
 #SBATCH --output=slurm-fewshot_ksweep-%j.out
 
 # Few-shot experiment: Qwen2.5-7B base model, SlideVQA + BDocs.
-# Conditions: k=2 random (baseline) + k=2,4,6 specific (corruption-matched selection).
+# Conditions: k=2 random (baseline) + k=2,4,6 handpicked (fixed answerable demos).
 # Evaluates only corrupted questions (--questions corrupted).
-# Demos are drawn from the held-out train_750 pool (no val-set leakage).
+# Handpicked demos are from original unprocessed train files — no overlap with corruption pipeline.
 # All leaves share one VQA_RUN_ID so the metrics pipeline produces a single summary.csv.
 #
 # Usage:
@@ -81,12 +81,13 @@ patch_config() {
     local SPLIT_VAL="$3"
     local FS_ENABLED="$4"   # "true" | "false"
     local N_SHOTS="$5"
-    local SELECTION="$6"    # "random" | "specific"
-    local POOL_FILE="$7"
+    local SELECTION="$6"    # "random" | "handpicked"
+    local SHOT_TYPE="$7"    # "mixed" | "answerable"
+    local POOL_FILE="$8"
 
     uv run python -c "
 import json, sys
-config_path, dataset, split, fs_enabled, n_shots, selection, pool_file = sys.argv[1:]
+config_path, dataset, split, fs_enabled, n_shots, selection, shot_type, pool_file = sys.argv[1:]
 fs_enabled = fs_enabled == 'true'
 n_shots = int(n_shots)
 
@@ -98,28 +99,32 @@ cfg['input_file'] = input_file
 cfg['few_shot']['enabled'] = fs_enabled
 cfg['few_shot']['n_shots'] = n_shots
 cfg['few_shot']['selection'] = selection
+cfg['few_shot']['shot_type'] = shot_type
 cfg['few_shot']['pool_file'] = pool_file if fs_enabled else ''
 json.dump(cfg, open(config_path, 'w'), indent=4)
-" "$CONFIG_PATH" "$DATASET" "$SPLIT_VAL" "$FS_ENABLED" "$N_SHOTS" "$SELECTION" "$POOL_FILE"
+" "$CONFIG_PATH" "$DATASET" "$SPLIT_VAL" "$FS_ENABLED" "$N_SHOTS" "$SELECTION" "$SHOT_TYPE" "$POOL_FILE"
 }
 
+HANDPICKED_POOL="/home/amartinelli/VRD-UQA/data/fewshot_handpicked_demos.json"
+RANDOM_POOL_BASE="/home/amartinelli/VRD-UQA/data"
+
 for D in "${DATASETS[@]}"; do
-    POOL_FILE="/home/amartinelli/VRD-UQA/data/$D/${D}_train_750/${D}_unanswerable_corrupted_questions_just_false.json"
+    RANDOM_POOL="$RANDOM_POOL_BASE/$D/${D}_train_750/${D}_unanswerable_corrupted_questions_just_false.json"
 
     printf "\n\n########## DATASET: %s  (split=%s) ##########\n" "$D" "$SPLIT"
 
-    # ---- k=2 random (baseline) ----
+    # ---- k=2 random (baseline) — draws from dataset's own corrupted train pool ----
     printf "\n=== QWEN2.5 BASE — FEW-SHOT k=2 random — %s ===\n" "$D"
-    patch_config "$FS_CONFIG" "$D" "$SPLIT" "true" 2 "random" "$POOL_FILE"
+    patch_config "$FS_CONFIG" "$D" "$SPLIT" "true" 2 "random" "mixed" "$RANDOM_POOL"
     export VQA_CONFIG_PATH="$FS_CONFIG"
     uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py \
         --config_path "$FS_CONFIG" --questions corrupted
     sync_back
 
-    # ---- k=2,4,6 specific (corruption-matched) ----
+    # ---- k=2,4,6 handpicked (fixed answerable demos, no corruption-pipeline leakage) ----
     for K in 2 4 6; do
-        printf "\n=== QWEN2.5 BASE — FEW-SHOT k=%d specific — %s ===\n" "$K" "$D"
-        patch_config "$FS_CONFIG" "$D" "$SPLIT" "true" "$K" "specific" "$POOL_FILE"
+        printf "\n=== QWEN2.5 BASE — FEW-SHOT k=%d handpicked — %s ===\n" "$K" "$D"
+        patch_config "$FS_CONFIG" "$D" "$SPLIT" "true" "$K" "handpicked" "answerable" "$HANDPICKED_POOL"
         export VQA_CONFIG_PATH="$FS_CONFIG"
         uv run python VQA_analysis/evaluators/qwen2.5_evaluator.py \
             --config_path "$FS_CONFIG" --questions corrupted
@@ -152,8 +157,8 @@ rl.write_manifest(run / 'run_manifest.json', {
     'configs': configs,
     'experiment': 'fewshot_ksweep',
     'k_values': [2, 4, 6],
-    'selections': ['random', 'specific'],
-    'conditions': 'k=2 random (baseline); k=2,4,6 specific',
+    'selections': ['random', 'handpicked'],
+    'conditions': 'k=2 random/mixed (baseline); k=2,4,6 handpicked/answerable',
     'model': 'Qwen2.5-VL-7B-Instruct',
     'pool': 'train_750',
 })

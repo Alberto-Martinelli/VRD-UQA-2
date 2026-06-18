@@ -20,8 +20,11 @@ class Phi4VQAEvaluator(BaseVQAEvaluator):
         model_name = self.model_config["model_name"]
         self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
         model_kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto", "trust_remote_code": True}
-        if self.model_config.get("use_flash_attention", False):
-            model_kwargs["_attn_implementation"] = "flash_attention_2"
+        # The upstream checkpoint's config.json bakes in _attn_implementation="flash_attention_2",
+        # so an explicit override is required even to opt OUT of it (omitting the kwarg keeps FA2).
+        model_kwargs["_attn_implementation"] = (
+            "flash_attention_2" if self.model_config.get("use_flash_attention", False) else "sdpa"
+        )
         self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
         adapter_path = self.model_config.get("adapter_path")

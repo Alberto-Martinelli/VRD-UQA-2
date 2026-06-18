@@ -66,7 +66,7 @@
             "batch_size": 1,
             "max_tokens": 1024,
             "visual_token_budget": 560,
-            "use_flash_attention": true,
+            "use_flash_attention": false,
             "name": "Gemma4-12B"
         },
         "gemma4_finetuned": {
@@ -75,7 +75,7 @@
             "batch_size": 1,
             "max_tokens": 1024,
             "visual_token_budget": 560,
-            "use_flash_attention": true,
+            "use_flash_attention": false,
             "name": "Gemma4-12B_finetuned"
         }
     },

@@ -88,6 +88,9 @@ activate_eval_venv() {
                 "transformers>=5.5.2" "peft>=0.19.0" accelerate bitsandbytes \
                 Pillow sentencepiece protobuf tqdm numpy
         fi
+        # flash-attn's build backend needs setuptools but doesn't declare it; --no-build-isolation
+        # means it must already be present in the venv rather than pulled in transiently.
+        uv pip install --python "$venv/bin/python" setuptools
         uv pip install --python "$venv/bin/python" flash-attn --no-build-isolation \
             || echo "flash-attn unavailable in eval venv; set use_flash_attention=false for $model if load fails"
         EVAL_CMD=(env "PYTHONPATH=$WORK_DIR" "$venv/bin/python")
